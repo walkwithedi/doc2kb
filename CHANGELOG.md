@@ -2,6 +2,10 @@
 
 Releases follow VERSION; merging a version change to main publishes v<version> (.github/workflows/release.yml).
 
+## 1.1.0
+
+- Library use: `build_parser()` returns every command-line option, and `run_batch()` / `run_files()` take an optional `writer` that replaces the merged or per-document output while the date filter, duplicate handling, fingerprint file, archives and report run as usual. SPEC.md, section 5.6, describes the interface. The command line is unchanged.
+
 ## 1.0.0
 
 First release as a project of its own.

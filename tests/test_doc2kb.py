@@ -345,6 +345,47 @@ class DedupToolTest(Tmp):
                 self.assertTrue(any(n.startswith("big.md.bak-") for n in os.listdir(self.p(lang, "inc"))))
 
 
+class LibraryTest(Tmp):
+    """build_parser() and the writer hook of run_batch() / run_files()."""
+
+    def writer(self, calls):
+        def write(entries, md_dir, ts, src_root, out_name):
+            path = os.path.join(md_dir, out_name + "_custom.md")
+            with open(path, "w", encoding="utf-8") as f:
+                for e in entries:
+                    f.write("## %s\n%s\n" % (e["rel"], e["body"]))
+            calls["entries"] = entries
+            calls["out_name"] = out_name
+            return path, {e["rel"]: "custom-" + e["rel"] for e in entries}, lambda rp: calls.setdefault("finish", rp)
+        return write
+
+    def test_batch_with_writer(self):
+        src = self.p("src")
+        os.remove(fx.build_all(src, english=True)["pdf"])
+        out, db = self.p("out"), self.p("fp.tsv")
+        args = core.build_parser().parse_args(["--batch", src, "-o", out, "--merge", "--no-images", "--fp-db", db])
+        calls = {}
+        self.assertEqual(core.run_batch(args, writer=self.writer(calls)), 0)
+        names = sorted(os.listdir(out))
+        self.assertIn("src_custom.md", names)
+        self.assertNotIn("src.md", names)                     # the merged file is not written
+        self.assertEqual(calls["out_name"], "src")
+        self.assertTrue(calls["entries"] and all({"rel", "body", "stat"} <= set(e) for e in calls["entries"]))
+        self.assertTrue(calls["finish"].endswith(".txt") and os.path.isfile(calls["finish"]))
+        rows = [ln.split("\t") for ln in read(db).splitlines() if ln and not ln.startswith("#")]
+        self.assertTrue(rows and all(r[-1] == "custom-" + r[-2] for r in rows), rows)
+
+    def test_files_with_writer(self):
+        src = self.p("src")
+        made = fx.build_all(src, english=True)
+        args = core.build_parser().parse_args([made["docx"], "-o", self.p("out")])
+        calls = {}
+        core.run_files(args, writer=self.writer(calls))
+        self.assertEqual(len(calls["entries"]), 1)
+        self.assertTrue(os.path.isfile(calls["finish"]))
+        self.assertTrue(any(n.endswith("_custom.md") for n in os.listdir(self.p("out"))))
+
+
 class ShellTest(Tmp):
     def sh(self, *args, lang="en"):
         return run(["bash", os.path.join(TOOL, "doc2kb.sh"), *args], check=False, env={"DOC2KB_LANG": lang})

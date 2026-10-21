@@ -78,6 +78,8 @@ python3 doc2kb_core.py --files 清单.txt -o 输出目录 --lang zh          # �
 python3 doc2kb_core.py -h                                              # 查看全部参数
 ```
 
+其他工具可以导入 `doc2kb_core.py`，通过 `build_parser()` 和 `run_batch()` / `run_files()` 的 `writer` 参数写出自己的产物；接口见 SPEC.md 第 5.6 节。
+
 批量运行除了给人看的汇总，还输出 `STAT<TAB>键<TAB>值` 行（new、kept、failed、written、dup、moved、chars、images）和 `FAILED<TAB>路径` 行，供脚本读取。
 
 ### 清理重复内容（目录移动后的大增量文件）
