@@ -3023,15 +3023,29 @@ def _kept_entry(src, rel, rel_dir, base, md_path, img_root):
     }
 
 
-def run_batch(args):
+def run_batch(args, writer=None):
+    """Convert every document in the folder args.batch. writer, when given, replaces the merged
+    or per-document output: see call_writer()."""
     cache = ArchiveCache()
     try:
-        return _run_batch(args, cache)
+        return _run_batch(args, cache, writer)
     finally:
         cache.cleanup()
 
 
-def _run_batch(args, cache):
+def call_writer(writer, entries, md_dir, ts, src_root, out_name):
+    """Library use: writer(entries, md_dir, ts, src_root, out_name) writes the output files instead
+    of write_merged() / write_index(). entries are the converted documents after the date filter,
+    duplicate removal and the fingerprint file: dicts with 'rel' (path below src_root), 'body'
+    (the Markdown text) and 'stat' (status, md, chars, imgs, doc_mtime, mtime_src). It returns
+    (path, file_of, finish): path of the main output file or None; file_of maps rel to the output
+    file name holding that document (used for fingerprint lines); finish(report_path), or None,
+    prints the writer's own summary lines and may add to the report."""
+    path, file_of, finish = writer(entries, md_dir, ts, src_root, out_name)
+    return path, file_of or {}, finish
+
+
+def _run_batch(args, cache, writer=None):
     src_root = os.path.abspath(args.batch)
     if not os.path.isdir(src_root):
         log.error('%s', T('no_folder', src_root))
@@ -3204,15 +3218,20 @@ def _run_batch(args, cache):
                             filtered=filtered, since=since,
                             dup_groups=dup_groups, moved=moved)
     written = sum(1 for e in entries if e['stat']['status'] in (OK, SKIPPED))
-    if merge:
+    file_of, finish = {}, None
+    if writer:
+        out_name = args.merge_name or safe_name(os.path.basename(src_root))
+        ip, file_of, finish = call_writer(writer, entries, md_dir, ts_end, src_root, out_name)
+        print(T('written_n', written))
+    elif merge:
         out_name = args.merge_name or safe_name(os.path.basename(src_root))
         ip = write_merged(entries, md_dir, ts_end, src_root, out_name, moved=moved)
         print(T('written_n', written))
     else:
         ip = write_index(entries, md_dir, ts_end, src_root)
     if fp_db:
-        kb_name = os.path.basename(ip) if merge and ip else None
-        rows = [(e['text_fp'], e['rel'], kb_name or e['stat']['md'])
+        kb_name = os.path.basename(ip) if (merge or writer) and ip else None
+        rows = [(e['text_fp'], e['rel'], file_of.get(e['rel']) or kb_name or e['stat']['md'])
                 for e in entries
                 if e['stat']['status'] == OK and e.get('text_fp')]
         # moved documents get a line too: the path points to the newest location
@@ -3241,7 +3260,11 @@ def _run_batch(args, cache):
     print(T('kb_total', written))
     print(T('totals', tot_c, tot_i))
     print(T('report_at', os.path.basename(rp)))
-    print(T('merged_at' if merge else 'index_at', os.path.basename(ip)))
+    if writer:
+        if finish:
+            finish(rp)
+    else:
+        print(T('merged_at' if merge else 'index_at', os.path.basename(ip)))
     print_stats(new=ok_n, kept=len(skipped), failed=fail_n, legacy=len(legacy),
                 written=written, dup=n_dup, moved=len(moved), chars=tot_c, images=tot_i)
     # failed files, tab-separated, so doc2kb.sh can schedule retries
@@ -3253,18 +3276,18 @@ def _run_batch(args, cache):
 
 # ================================================================ named files
 
-def run_files(args):
+def run_files(args, writer=None):
     """Process one or more named files; a zip or tar archive stands for the documents in it.
     Merged mode: one md named after the folder of the first file.
-    Otherwise one md per document."""
+    Otherwise one md per document. writer, when given, replaces both: see call_writer()."""
     cache = ArchiveCache()
     try:
-        return _run_files(args, cache)
+        return _run_files(args, cache, writer)
     finally:
         cache.cleanup()
 
 
-def _run_files(args, cache):
+def _run_files(args, cache, writer=None):
     paths = []
     if args.files:
         with open(args.files, encoding='utf-8') as f:
@@ -3396,7 +3419,11 @@ def _run_files(args, cache):
     rp = write_batch_report(entries, md_dir, ts_end, src_root, [], [],
                             filtered=filtered, since=since,
                             dup_groups=dup_groups)
-    if merge:
+    finish = None
+    if writer:
+        out_name = args.merge_name or safe_name(os.path.basename(src_root))
+        ip, _, finish = call_writer(writer, entries, md_dir, ts_end, src_root, out_name)
+    elif merge:
         out_name = args.merge_name or safe_name(os.path.basename(src_root))
         ip = write_merged(entries, md_dir, ts_end, src_root, out_name)
     else:
@@ -3418,7 +3445,10 @@ def _run_files(args, cache):
         print(T('dups_n', n_dup, len(dup_groups)))
     print(T('totals', tot_c, tot_i))
     print(T('report_at', os.path.basename(rp)))
-    if ip:
+    if writer:
+        if finish:
+            finish(rp)
+    elif ip:
         print(T('merged_at' if merge else 'index_at', os.path.basename(ip)))
     print_stats(new=ok_n, failed=fail_n, dup=n_dup, chars=tot_c, images=tot_i)
     return 0 if ok_n else 4
@@ -3431,15 +3461,9 @@ def default_lang():
     return lang if lang in LANGS else 'en'
 
 
-def main(argv=None):
-    # file names may hold bytes that are not UTF-8 (GBK names from Windows); printing them
-    # would raise UnicodeEncodeError, so the streams replace what they cannot encode
-    for _stream in (sys.stdout, sys.stderr):
-        try:
-            _stream.reconfigure(errors='replace')
-        except (AttributeError, ValueError):
-            pass  # a stream that cannot be reconfigured keeps its encoding
-
+def build_parser():
+    """Every command-line option; other tools add theirs and pass the result to run_batch() or
+    run_files()."""
     ap = argparse.ArgumentParser(description='Convert Office, PDF and mail files to Markdown for a knowledge base.')
     ap.add_argument('input', nargs='?',
                     help='input file (.docx/.xlsx/.pptx/.pdf/.eml, or a .zip/.tar[.gz|.bz2|.xz] '
@@ -3486,6 +3510,19 @@ def main(argv=None):
     ap.add_argument('--log-level', default=os.environ.get('LOG_LEVEL', 'WARNING').upper(),
                     type=str.upper, choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
                     help='default: environment variable LOG_LEVEL, else WARNING')
+    return ap
+
+
+def main(argv=None):
+    # file names may hold bytes that are not UTF-8 (GBK names from Windows); printing them
+    # would raise UnicodeEncodeError, so the streams replace what they cannot encode
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(errors='replace')
+        except (AttributeError, ValueError):
+            pass  # a stream that cannot be reconfigured keeps its encoding
+
+    ap = build_parser()
     args = ap.parse_args(argv)
     logging.basicConfig(level=args.log_level, format=LOG_FORMAT, stream=sys.stderr)
     set_lang(args.lang)

@@ -79,6 +79,8 @@ python3 doc2kb_core.py report.docx -o OUTPUT --lang zh     # one file, Chinese l
 python3 doc2kb_core.py -h                                  # every option
 ```
 
+Other tools can import `doc2kb_core.py` and write output of their own through `build_parser()` and the `writer` argument of `run_batch()` / `run_files()`; SPEC.md, section 5.6, describes the interface.
+
 Besides the human summary, batch runs print `STAT<TAB>key<TAB>value` lines (new, kept, failed, written, dup, moved, chars, images) and `FAILED<TAB>path` lines for scripts.
 
 ### Cleaning up duplicates after a folder move

@@ -388,6 +388,22 @@ the lists: done, skipped, failed (with reason), needing a new format, excluded b
 
 **Image list**: per document, orphan pictures marked and listed first.
 
+### 5.6 Library use
+
+Other tools import the parsing engine to write output of their own while keeping its walking, filtering,
+duplicate handling and reports:
+
+- `build_parser()` returns every command-line option; a caller adds its own and parses with it.
+- `run_batch(args, writer=None)` and `run_files(args, writer=None)` run a folder or named files as the
+  command line does. With `writer`, the writer replaces the merged or per-document output (and the index);
+  everything before it (date filter, duplicates, fingerprint file, archives) and the batch report run as
+  usual.
+- `writer(entries, md_dir, ts, src_root, out_name)` gets the converted documents (dicts with `rel`, the path
+  below the source folder, `body`, the Markdown text, and `stat`: status, output name, characters,
+  pictures, document time and its source) and returns `(path, file_of, finish)`: the main output file or
+  None; a map from `rel` to the output file holding that document, which fingerprint lines name; and
+  `finish(report_path)` or None, called after the summary to print the writer's own lines.
+
 ---
 
 ## 6. Run modes
