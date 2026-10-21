@@ -12,8 +12,7 @@
 ### 1.1 What it is for
 
 Turn accumulated Office documents, PDFs and mail into a plain-text knowledge base that an AI
-assistant can search and answer from. The kb-ingest skill uses the same converter to make the
-batch files it ingests instead of reading the binary files.
+assistant can search and answer from.
 
 ### 1.2 Constraints
 
@@ -22,7 +21,7 @@ batch files it ingests instead of reading the binary files.
 | No dependencies | Nothing beyond the language's standard library: no document converters, no office suite on the command line, no third-party parsing libraries | Office formats are parsed from their zip packages and XML directly |
 | Plain-text output | The output is read by an AI assistant | Markdown, no HTML; pictures are separate files |
 | Non-ASCII everywhere | File names, folder names and content are often Chinese; paths contain spaces and brackets | Every step must handle non-ASCII text and special characters |
-| Linux desktop | Kylin | The dialog mode uses what such a desktop has (zenity); the command-line mode needs only bash and Python |
+| Linux desktop | Any desktop with zenity | The dialog mode uses what such a desktop has (zenity); the command-line mode needs only bash and Python |
 
 > The dependency rule is the strongest one. If the environment happens to have better tools, the
 > implementation may use them (poppler-utils for PDF, ImageMagick for contact sheets), but it must not
@@ -44,9 +43,7 @@ serves machine retrieval rather than human layout:
 Two deliverables, with separate responsibilities:
 
 1. **Parsing engine**: parses documents, extracts content, writes the output. Callable from the command
-   line, every behaviour controlled by options, no interface code. Other programs (the kb-ingest
-   skill) import it. The knowledge-base batch file format (5.6) sits in a module of its own, which also
-   splits batch files back, so the skills that read batch files share it.
+   line, every behaviour controlled by options, no interface code. Other programs can import it.
 2. **Entry script**: two ways to run
    - without arguments -> dialogs (everyday manual use)
    - with arguments -> command line without any interface (scheduled runs)
@@ -334,9 +331,6 @@ section starts with the original path, the document's last-modified time and the
 
 **One file per document**: one Markdown file per source document, plus a separate index file.
 
-**Knowledge-base batch files**: the documents spread over numbered batch files of at most a set number of
-characters, for knowledge-base intake (5.6).
-
 > Why: merged output is easy to hand to an AI in one go; one file per document is easier to manage.
 > Merged is the default because handing over is the main use.
 
@@ -394,44 +388,6 @@ the lists: done, skipped, failed (with reason), needing a new format, excluded b
 
 **Image list**: per document, orphan pictures marked and listed first.
 
-### 5.6 Knowledge-base batch files
-
-Batch files feed an ingest step in which an assistant extracts claims with their exact source sentences and
-a script checks each sentence against the source. The format therefore has to give every passage a stable
-address, keep each file within what the assistant can read at once, and split back losslessly.
-
-- **Names**: `<source folder>_YYYYMMDD_b01.md`, `_b02.md`, ...; when the output folder already has batch
-  files of that day, `<source folder>_YYYYMMDD-HHMM_b01.md`.
-- **Header**: batch name with its number and the total, tier and character limit, one paragraph telling the
-  reader how sources and anchors are marked and that quotes are copied exactly, and a table: source number,
-  file name, original path, document last-modified time, characters, part (`k/n`, or `-`). The header holds
-  no level 1 heading.
-- **Sources**: numbered S01, S02, ... over the whole run, ordered by document last-modified time, oldest
-  first (unknown times last, then by path), so an older version is always read before a newer one. Each source
-  is a section headed `# Snn <file name>`, followed by the original path, the last-modified time with its
-  source and the extraction time as quoted lines; the single-file metadata header is dropped and the
-  document's headings are demoted by one level.
-- **Anchors**: every paragraph and every list item ends with ` ^snn-pN`; a table gets one anchor on its own
-  line after a blank line below it. Headings, quoted lines (notes the converter adds), rules, comments and
-  picture placeholders get none. N counts from 1 over the whole source, across parts. The form is an Obsidian
-  block reference, so after splitting back `[[file#^pN]]` reaches the passage.
-- **Limit**: `--batch-chars`, else `--tier` (weak 20,000, strong 100,000; kept for older command lines),
-  else `batch_chars` from the library settings file named by `--library`, else 20,000; a library's `tier`
-  is ignored; below 1,000 is refused.
-- **Cutting**: a source larger than the limit is cut at the highest heading level that divides it into more
-  than one piece, pieces still too large at the next level, and without headings between blocks; pieces are
-  then joined greedily back up to the limit. Parts keep the source number and are marked `· k/n` at the end
-  of the section heading. A block (paragraph, list, table) is never cut: one larger than the limit becomes a
-  part and a batch of its own, and the run output and the report name it.
-- **Packing**: parts in source order; a batch closes when the next part would take it over the limit.
-- **Pictures**: not exported; placeholders stay in the text.
-- **Duplicates and increments**: as for merged output; a fingerprint line names the batch file holding the
-  document's first part.
-- **Splitting back** (`kb_batch.py split`): the parts of each source are joined in order (the quoted lines
-  kept once), heading levels restored and `^snn-pN` rewritten to `^pN`. A source with a part missing is not
-  written. The result equals the single-file conversion apart from the anchors, the quoted lines and blank
-  lines.
-
 ---
 
 ## 6. Run modes
@@ -448,7 +404,7 @@ Choose a mode first:
 The walk skips hidden folders, lock files (the office suite's temporary files) and the tool's own output
 folders (or it nests into itself).
 
-Options at least: merge, knowledge-base batch files, expand embedded attachments,
+Options at least: merge, expand embedded attachments,
 skip pictures, contact sheets.
 
 **One failing file never stops a batch.** Record the reason in the report and continue. Failure types to
@@ -640,11 +596,6 @@ missing, what to install, or which alternative to use) instead of failing halfwa
 12. The metadata header names the time source correctly (document properties / file system with the
     unreliability note)
 13. Time zones are converted correctly (UTC metadata shown as local time)
-14. Batch files: sources numbered over the run, oldest first; anchors on paragraphs, list items and tables
-    only; no batch over the limit except one holding a single larger block, which the report names
-15. A long document is cut at headings into parts that keep its number and continue its anchors
-16. Splitting a run's batch files back gives each source's single-file text plus anchors `^pN`; with a part
-    missing that source is not written
 
 ### 8.3 Incremental logic
 

@@ -881,7 +881,6 @@ fi
 
 # ---------- common options ----------
 O_MERGE="$(t "Merge" "合并输出")"
-O_KBB="$(t "KB batch files" "知识库批文件")"
 O_INLINE="$(t "Expand workbooks" "内联Excel")"
 O_NOIMG="$(t "Skip images" "跳过图片")"
 O_NODEDUP="$(t "Keep duplicates" "不去重")"
@@ -891,7 +890,6 @@ OPTS=$(zenity --list --checklist \
     --text="$(t "$N_SEL files to process" "待处理 $N_SEL 个文件")" \
     --column="$(t "Pick" "选择")" --column="$(t "Option" "选项")" --column="$(t "Description" "说明")" \
     TRUE  "$O_MERGE"   "$(t "Index and all text in one md (untick: one md per document)" "索引与全部正文合并成单个 md（取消则每份一个 md）")" \
-    FALSE "$O_KBB"     "$(t "Batch files for knowledge-base intake: source numbers, paragraph anchors, no pictures (replaces Merge)" "供知识库入库的批文件：来源编号、段落锚点、不导出图片（代替合并输出）")" \
     TRUE  "$O_INLINE"  "$(t "Expand workbooks embedded in docx into the text (recommended)" "把 docx 里嵌入的 Excel 附件展开到正文（推荐）")" \
     FALSE "$O_NOIMG"   "$(t "Export no picture files; the anchors stay; faster" "不导出图片文件，正文仍保留图锚点，处理更快")" \
     FALSE "$O_NODEDUP" "$(t "Keep every copy (by default files with the same text are kept once, the newest)" "保留全部副本（默认对正文相同的文件只保留最新一份）")" \
@@ -901,21 +899,14 @@ OPTS=$(zenity --list --checklist \
 
 has_opt() { printf '|%s|' "$OPTS" | grep -qF "|$1|"; }
 RUN_ARGS=(--lang "$UI_LANG" "${SINCE_ARG[@]}")
-KBB=0
-if has_opt "$O_KBB"; then
-    KBB=1
-    RUN_ARGS+=(--kb-batch)
-elif has_opt "$O_MERGE"; then
-    RUN_ARGS+=(--merge)
-fi
+has_opt "$O_MERGE" && RUN_ARGS+=(--merge)
 has_opt "$O_INLINE" || RUN_ARGS+=(--no-inline)
 NOIMG=0;  has_opt "$O_NOIMG" && NOIMG=1
-[ "$KBB" = "1" ] && NOIMG=1
-[ "$NOIMG" = "1" ] && [ "$KBB" = "0" ] && RUN_ARGS+=(--no-images)
+[ "$NOIMG" = "1" ] && RUN_ARGS+=(--no-images)
 has_opt "$O_NODEDUP" && RUN_ARGS+=(--no-dedup)
 SHEETS=0; has_opt "$O_SHEETS" && SHEETS=1
 
-if [ "$BATCH_MODE" = "1" ] && [ "$KBB" = "0" ] && ! has_opt "$O_MERGE"; then
+if [ "$BATCH_MODE" = "1" ] && ! has_opt "$O_MERGE"; then
     zenity --question --title="$TITLE" \
         --text="$(t "One md per document.\n\nResults already in the output folder are skipped by default (incremental).\nProcess everything again?" \
                     "检测到「每份独立」模式。\n\n输出目录中已有的结果默认会被跳过（增量）。\n是否强制全部重新处理？")" \
@@ -924,9 +915,7 @@ if [ "$BATCH_MODE" = "1" ] && [ "$KBB" = "0" ] && ! has_opt "$O_MERGE"; then
 fi
 
 # skipping images rules out contact sheets
-if [ "$NOIMG" = "1" ] && [ "$SHEETS" = "1" ] && [ "$KBB" = "1" ]; then
-    SHEETS=0
-elif [ "$NOIMG" = "1" ] && [ "$SHEETS" = "1" ]; then
+if [ "$NOIMG" = "1" ] && [ "$SHEETS" = "1" ]; then
     zenity --warning --title="$TITLE" \
         --text="$(t "\"$O_NOIMG\" and \"$O_SHEETS\" conflict.\n\nThis run skips images and makes no contact sheets." "「跳过图片」与「合并拼图」冲突。\n\n本次将跳过图片，不生成拼图。")" 2>/dev/null
     SHEETS=0

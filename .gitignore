@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+dist/
+.DS_Store
+# a private-terms list belongs in ~/.config/doc2kb/, never here
+sensitive_terms.txt
+*.zip
