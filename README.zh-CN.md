@@ -1,8 +1,14 @@
 # doc2kb：文档转 Markdown 知识库
 
-把 Word、Excel、PowerPoint、PDF 和邮件（.eml）转换成 AI 助手便于检索的 Markdown：合并成一个带索引的文件，或每份文档一个文件。标题层级、表格、嵌入的 Excel 附件和每张图片的位置都会保留；重复的副本只收录一份。
+**把一整个文件夹的办公文档交给它，得到 AI 助手真正检索得了的 Markdown**：合并成一个带索引的文件，或每份文档一个文件。
 
-只用 Python 3 标准库，不依赖 pandoc、LibreOffice、python-docx、openpyxl、python-pptx。可以在 Linux 桌面的图形界面或定时任务里批量转换整个目录；`doc2kb_core.py` 也可以作为库被其他工具导入。
+- **零依赖**：只用 Python 3.7+ 标准库，不需要 pandoc、LibreOffice、python-docx、openpyxl、python-pptx，拷到离线机器上就能用。
+- **该留的都留着**：标题层级、表格、嵌入的 Excel 附件和每张图片的位置都保留。
+- **重复只收一份**：内容相同的文件（包括 zip、tar 压缩包里的）只解析一次，目录挪动或改名后也不会重复入库。
+- **装好就不用管**：增量模式配合 cron，每次只处理上次之后有变化的文件。
+- **两种用法**：可以用桌面对话框或命令行运行，也可以把 `doc2kb_core.py` 当库导入。
+
+支持 `.docx` `.xlsx` `.xlsm` `.pptx` `.pdf` `.eml` 和压缩包，提示信息和输出里的标签可选中文或英文。
 
 [English](README.md)
 

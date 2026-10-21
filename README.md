@@ -1,8 +1,14 @@
 # doc2kb: documents to a Markdown knowledge base
 
-Turns Word, Excel and PowerPoint files, PDFs and mail (.eml) into Markdown an AI assistant can search: one merged file with an index, or one file per document. Headings, tables, embedded workbooks and the position of every picture are kept; duplicate copies are filed once.
+**Point it at a folder of office documents and get back Markdown an AI assistant can actually search:** one merged file with an index, or one file per document.
 
-Python 3 standard library only: no pandoc, LibreOffice, python-docx, openpyxl or python-pptx. It converts whole folders from a Linux desktop dialog or a cron job, and `doc2kb_core.py` can be imported by other tools as a library.
+- **Zero dependencies.** Python 3.7+ standard library only: no pandoc, LibreOffice, python-docx, openpyxl or python-pptx. Copy it to an offline machine and it runs.
+- **Keeps what matters.** Headings, tables, embedded workbooks and the position of every picture survive the conversion.
+- **Files things once.** Identical copies, including ones inside zip and tar archives, are parsed once. Moved or renamed folders don't produce duplicates.
+- **Set it and forget it.** An incremental mode for cron converts only what changed since the last run.
+- **Two ways to use it.** Run it from a desktop dialog or the command line, or import `doc2kb_core.py` as a library.
+
+Supports `.docx` `.xlsx` `.xlsm` `.pptx` `.pdf` `.eml`, plus archives. Messages and output labels can be English or Chinese.
 
 [中文说明](README.zh-CN.md)
 
