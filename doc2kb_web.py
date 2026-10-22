@@ -100,6 +100,11 @@ MESSAGES = {
 LANG = 'en'
 
 
+def log_safe(value):
+    """A request value for a log line: line breaks escaped, so it cannot start a line of its own."""
+    return str(value).replace('\r', '\\r').replace('\n', '\\n')
+
+
 def M(key, *args):
     text = MESSAGES[key][1 if LANG == 'zh' else 0]
     return text % args if args else text
@@ -294,7 +299,7 @@ class Job:
         log.info('%s finished rc=%s cancelled=%s', self.kind, rc, self.cancelled)
 
     def _run_step(self, argv):
-        log.info('%s step: %r', self.kind, argv)
+        log.info('%s step: %s', self.kind, log_safe(argv))
         env = dict(os.environ, PYTHONIOENCODING='utf-8', DOC2KB_LANG=LANG)
         try:
             # a session of its own, so a cancel reaches doc2kb.sh and the converter it starts
@@ -801,7 +806,7 @@ class WebState:
         with self.lock:
             for page, t in list(self.pages.items()):
                 if now - t > PING_TIMEOUT:
-                    log.info('page %r heartbeat lost', page)
+                    log.info('page %s heartbeat lost', log_safe(page))
                     del self.pages[page]
                     if not self.pages:
                         self.empty_since = now - BYE_GRACE
@@ -837,7 +842,7 @@ class Handler(BaseHTTPRequestHandler):
     state = None
 
     def log_message(self, fmt, *args):
-        log.debug('%s - %r', self.address_string(), fmt % args)
+        log.debug('%s - %s', self.address_string(), log_safe(fmt % args))
 
     def send_json(self, code, obj):
         body = json.dumps(obj, ensure_ascii=False).encode('utf-8', 'replace')
@@ -861,8 +866,7 @@ class Handler(BaseHTTPRequestHandler):
                 token = self.headers.get('X-Token', '')
             ok = isinstance(token, str) and hmac.compare_digest(token, st.token)
         if not ok:
-            # %r: request values are written escaped, so they cannot start a log line of their own
-            log.warning('rejected %s %r', self.command, urlsplit(self.path).path)
+            log.warning('rejected %s %s', self.command, log_safe(urlsplit(self.path).path))
             self.send_json(403, {'error': M('denied')})
         return ok
 
@@ -936,7 +940,7 @@ class Handler(BaseHTTPRequestHandler):
             data = self.read_json()
             if not self.allowed(True, data.get('t')):
                 return
-            log.info('page %r closed', data.get('page'))
+            log.info('page %s closed', log_safe(data.get('page')))
             self.state.bye(str(data.get('page')))
             self.send_json(200, {'ok': True})
             return
