@@ -10,7 +10,7 @@ import sys
 import tempfile
 import time
 import unittest
-from unittest import mock
+import unittest.mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TESTS = os.path.dirname(os.path.abspath(__file__))
@@ -24,10 +24,13 @@ import doc2kb_web as web  # noqa: E402
 class Server:
     """doc2kb_web.py in a child process, without a browser."""
 
-    def __init__(self, lang="en"):
-        env = dict(os.environ, PYTHONIOENCODING="utf-8", LOG_LEVEL="WARNING")
+    def __init__(self, lang="en", home=None, log_level="WARNING"):
+        env = dict(os.environ, PYTHONIOENCODING="utf-8", LOG_LEVEL=log_level)
+        if home:
+            env["HOME"] = home
+        self.err = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
         self.proc = subprocess.Popen([sys.executable, WEB, "--no-browser", "--lang", lang],
-                                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                     stdout=subprocess.PIPE, stderr=self.err,
                                      universal_newlines=True, encoding="utf-8", env=env)
         line = self.proc.stdout.readline()
         url = line[line.index("http://"):].strip()
@@ -67,6 +70,11 @@ class Server:
             self.proc.kill()
         self.proc.wait(10)
         self.proc.stdout.close()
+        self.err.close()
+
+    def stderr(self):
+        self.err.seek(0)
+        return self.err.read()
 
 
 class WebTest(unittest.TestCase):
@@ -96,6 +104,7 @@ class WebTest(unittest.TestCase):
         st, s = self.srv.request("GET", "/api/status")
         self.assertEqual(st, 200)
         self.assertEqual(s["lang"], "en")
+        self.assertEqual(s["out_suffix"], "_doc2kb")
 
     def test_folder_list(self):
         os.makedirs(os.path.join(self.src, "sub"))
@@ -105,6 +114,7 @@ class WebTest(unittest.TestCase):
         self.assertEqual(d["dirs"], ["sub"])
         kinds = {f["name"]: f["kind"] for f in d["files"]}
         self.assertEqual(kinds["report-en.docx"], "doc")
+        self.assertNotIn("notes.txt", kinds)
         self.assertEqual(kinds["legacy-en.doc"], "legacy")
         st, d = self.srv.request("GET", "/api/ls?path=relative/path")
         self.assertEqual(st, 400)
@@ -139,6 +149,39 @@ class WebTest(unittest.TestCase):
         st, check = self.srv.request("POST", "/api/check", body=body)
         self.assertEqual(check["replace"], ["src.md"])
 
+    def test_files_run(self):
+        files = [os.path.join(self.src, n) for n in ("report-en.docx", "mail-en.eml", "legacy-en.doc")]
+        body = {"mode": "files", "files": files, "merge": True, "inline": True}
+        st, check = self.srv.request("POST", "/api/check", body=body)
+        self.assertEqual(st, 200, check)
+        self.assertEqual(check["skipped_legacy"], [files[2]])
+        self.assertEqual(check["out"], os.path.join(self.src, "_doc2kb"))
+        self.assertEqual(check["count"], 2)
+        st, _ = self.srv.request("POST", "/api/run", body=body)
+        self.assertEqual(st, 200)
+        job = self.srv.wait_job()
+        self.assertEqual((job["kind"], job["state"], job["rc"]), ("files", "done", 0), job["output"])
+        self.assertEqual(job["result"]["stats"]["new"], "2")
+        self.assertEqual(job["result"]["failed_n"], 0)
+        self.assertIn("Batch report", job["result"]["report"])
+        self.assertTrue(os.path.isfile(os.path.join(self.src, "_doc2kb", "src.md")))
+
+    def test_files_check_names_replaced_md(self):
+        out = os.path.join(self.tmp, "out")
+        os.makedirs(out)
+        open(os.path.join(out, "report-en.md"), "w").close()
+        body = {"mode": "files", "out": out, "merge": False,
+                "files": [os.path.join(self.src, "report-en.docx"), os.path.join(self.src, "mail-en.eml")]}
+        st, check = self.srv.request("POST", "/api/check", body=body)
+        self.assertEqual((st, check["replace"]), (200, ["report-en.md"]))
+
+    def test_files_refusals(self):
+        for files in ([], ["relative.docx"], [os.path.join(self.src, "missing.docx")],
+                      [os.path.join(self.src, "legacy-en.doc")]):
+            st, d = self.srv.request("POST", "/api/run", body={"mode": "files", "files": files})
+            self.assertEqual(st, 400, (files, d))
+            self.assertNotIn("source folder", d["error"])
+
     def test_run_refusals(self):
         st, d = self.srv.request("POST", "/api/run", body={"src": self.src, "only": []})
         self.assertEqual(st, 400)
@@ -147,11 +190,166 @@ class WebTest(unittest.TestCase):
         st, d = self.srv.request("POST", "/api/scan", body={"src": self.src, "since": "yesterday"})
         self.assertEqual(st, 400)
 
+    def test_folder_list_shows_md(self):
+        with open(os.path.join(self.src, "kb.md"), "w", encoding="utf-8") as f:
+            f.write("# kb\n")
+        st, d = self.srv.request("GET", "/api/ls?path=" + self.src)
+        kinds = {f["name"]: f["kind"] for f in d["files"]}
+        self.assertEqual(kinds["kb.md"], "md")
+
     def test_page_closed_exits(self):
         self.srv.request("POST", "/api/ping", body={"page": "p1"})
         self.srv.request("POST", "/api/bye", body={"t": self.srv.token, "page": "p1"}, token=False)
         self.srv.proc.wait(web.BYE_GRACE + 10)
         self.assertEqual(self.srv.proc.returncode, 0)
+
+
+class TaskTest(unittest.TestCase):
+    """Incremental tasks: kept in ~/.config/doc2kb/watch_tasks.conf, run through doc2kb.sh."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="doc2kb_web_task_")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.home = os.path.join(self.tmp, "home")
+        os.makedirs(self.home)
+        self.src = os.path.join(self.tmp, "src")
+        os.makedirs(self.src)
+        fx.build_all(self.src, english=True)
+        self.out = os.path.join(self.tmp, "out")
+        self.srv = Server(home=self.home)
+        self.addCleanup(self.srv.stop)
+
+    def tasks(self):
+        st, d = self.srv.request("GET", "/api/tasks")
+        self.assertEqual(st, 200, d)
+        return d["tasks"]
+
+    def edit(self, **body):
+        return self.srv.request("POST", "/api/tasks", body=body)
+
+    def test_add_edit_delete(self):
+        st, d = self.edit(action="add", name="Project\tAtlas", src=self.src, out=self.out)
+        self.assertEqual(st, 200, d)
+        conf = os.path.join(self.home, ".config", "doc2kb", "watch_tasks.conf")
+        with open(conf, encoding="utf-8") as f:
+            self.assertEqual(f.read(), "ProjectAtlas\t%s\t%s\n" % (self.src, self.out))
+        self.assertEqual([t["name"] for t in self.tasks()], ["ProjectAtlas"])
+        self.assertEqual(self.edit(action="add", name="ProjectAtlas", src=self.src, out=self.out)[0], 400)
+        self.assertEqual(self.edit(action="add", name="x", src=os.path.join(self.tmp, "nope"), out=self.out)[0], 400)
+        self.assertEqual(self.edit(action="add", name="", src=self.src, out=self.out)[0], 400)
+        self.assertEqual(self.edit(action="add", name="Other", src=self.src, out=self.out + "2")[0], 200)
+        st, d = self.edit(action="edit", old="Other", name="ProjectAtlas", src=self.src, out=self.out)
+        self.assertEqual(st, 400, "renaming onto another task's name is refused")
+        st, d = self.edit(action="edit", old="Other", name="Riverside", src=self.src, out=self.out + "3")
+        self.assertEqual(st, 200, d)
+        self.assertEqual([t["name"] for t in self.tasks()], ["ProjectAtlas", "Riverside"])
+        self.assertEqual(self.edit(action="delete", name="Riverside")[0], 200)
+        self.assertEqual([t["name"] for t in self.tasks()], ["ProjectAtlas"])
+        self.assertTrue(os.path.isdir(self.src), "deleting a task touches no files")
+
+    def run_tasks(self, **body):
+        st, d = self.srv.request("POST", "/api/tasks/run", body=body)
+        self.assertEqual(st, 200, d)
+        job = self.srv.wait_job(120)
+        self.assertEqual((job["kind"], job["state"]), ("tasks", "done"), job["output"])
+        return job["result"]["tasks"]
+
+    def test_first_run_takes_days_then_watermark(self):
+        self.edit(action="add", name="Atlas", src=self.src, out=self.out)
+        self.assertIsNone(self.tasks()[0]["last_run"])
+        r = self.run_tasks(names=["Atlas"], days=30)
+        self.assertEqual((r[0]["rc"], r[0]["first_run"]), (0, True), r)
+        self.assertIn("src_", r[0]["last_line"])
+        self.assertEqual(r[0]["log"], os.path.join(self.out, "_watch.log"))
+        self.assertTrue(self.tasks()[0]["last_run"])
+        r = self.run_tasks(names=["Atlas"], days=30)
+        self.assertEqual((r[0]["rc"], r[0]["first_run"]), (0, False), r)
+
+    def test_preview_writes_nothing(self):
+        self.edit(action="add", name="Atlas", src=self.src, out=self.out)
+        r = self.run_tasks(names=["Atlas"], days=30, dry_run=True)
+        self.assertEqual(r[0]["rc"], 0, r)
+        self.assertIn("report-en.docx", r[0]["output"])
+        self.assertFalse([n for n in os.listdir(self.out) if n.endswith(".md")])
+
+    def test_missing_source_is_reported_and_others_run(self):
+        self.edit(action="add", name="Gone", src=self.src, out=self.out + "1")
+        self.edit(action="add", name="Atlas", src=self.src, out=self.out)
+        conf = os.path.join(self.home, ".config", "doc2kb", "watch_tasks.conf")
+        with open(conf, encoding="utf-8") as f:
+            text = f.read()
+        with open(conf, "w", encoding="utf-8") as f:
+            f.write(text.replace("Gone\t" + self.src, "Gone\t" + self.src + "-moved"))
+        self.assertFalse(self.tasks()[0]["src_ok"])
+        r = self.run_tasks(names=["Gone", "Atlas"], days=30)
+        self.assertEqual([x["name"] for x in r], ["Gone", "Atlas"])
+        self.assertIsNone(r[0]["rc"])
+        self.assertEqual(r[1]["rc"], 0, r)
+
+
+class DedupTest(unittest.TestCase):
+    """The clean-up tab runs doc2kb_dedup.py: a dry run first, then the clean-up."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="doc2kb_web_dedup_")
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        src = os.path.join(self.tmp, "src")
+        fx.build_all(src, english=True)
+        self.base = os.path.join(self.tmp, "base")
+        subprocess.run([sys.executable, os.path.join(ROOT, "doc2kb_core.py"), "--batch", src, "-o", self.base,
+                        "--merge", "--merge-name", "full", "--no-images", "--lang", "en"],
+                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        os.makedirs(os.path.join(self.tmp, "inc"))
+        self.target = os.path.join(self.tmp, "inc", "big.md")
+        shutil.copy(os.path.join(self.base, "full.md"), self.target)
+        self.srv = Server()
+        self.addCleanup(self.srv.stop)
+
+    def dedup(self, **body):
+        st, d = self.srv.request("POST", "/api/dedup", body=dict(target=self.target, base=[self.base], **body))
+        self.assertEqual(st, 200, d)
+        job = self.srv.wait_job()
+        self.assertEqual((job["kind"], job["state"], job["rc"]), ("dedup", "done", 0), job["output"])
+        return job["result"]
+
+    def test_dry_run_then_clean(self):
+        with open(self.target, encoding="utf-8") as f:
+            before = f.read()
+        r = self.dedup(dry_run=True)
+        self.assertGreater(r["sections"], 0)
+        self.assertEqual(r["duplicate"], r["sections"])
+        self.assertIn("Duplicate text clean-up report", r["report"])
+        self.assertIsNone(r["backup"])
+        with open(self.target, encoding="utf-8") as f:
+            self.assertEqual(f.read(), before)
+        r = self.dedup(dry_run=False)
+        self.assertTrue(r["backup"] and os.path.isfile(r["backup"]), r)
+        with open(self.target, encoding="utf-8") as f:
+            self.assertLess(len(f.read()), len(before))
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, "inc", ".doc2kb_watch_fp")))
+
+    def test_no_fingerprint_file_when_asked(self):
+        self.dedup(dry_run=False, no_db=True)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "inc", ".doc2kb_watch_fp")))
+
+    def test_refusals(self):
+        for body in ({"target": os.path.join(self.tmp, "missing.md")},
+                     {"target": os.path.join(self.base, "_batch-report.txt")},
+                     {"target": self.target, "base": [os.path.join(self.tmp, "nope")]}):
+            st, d = self.srv.request("POST", "/api/dedup", body=body)
+            self.assertEqual(st, 400, (body, d))
+
+
+class LogTest(unittest.TestCase):
+    def test_request_values_cannot_forge_log_lines(self):
+        srv = Server(log_level="INFO")
+        self.addCleanup(srv.stop)
+        srv.request("POST", "/api/bye", body={"t": srv.token, "page": "p1\nFORGED line"}, token=False)
+        srv.request("GET", "/api/status%0AFORGED", token=False)
+        time.sleep(0.3)
+        lines = srv.stderr().splitlines()
+        self.assertFalse([l for l in lines if l.startswith("FORGED")], lines)
+        self.assertTrue([l for l in lines if "p1" in l], lines)
 
 
 class JobTest(unittest.TestCase):
@@ -207,8 +405,8 @@ class JobTest(unittest.TestCase):
     def test_pdf_skipped_without_pdftotext(self):
         os.makedirs(os.path.join(self.tmp, "s"))
         body = {"src": os.path.join(self.tmp, "s"), "only": ["a.pdf", "b.docx"]}
-        with mock.patch.object(web, "has_tool", lambda name: False):
-            params, argv, only = web.run_plan(body)
+        with unittest.mock.patch.object(web, "has_tool", lambda name: False):
+            params, argv, only, opt = web.run_plan(body)
         self.assertEqual(only, ["b.docx"])
         self.assertEqual(params["skipped_pdf"], ["a.pdf"])
         self.assertIn("--no-images", argv)

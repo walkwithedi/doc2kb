@@ -16,6 +16,7 @@
   header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
   h1 { font-size:22px; margin:0; }
   h2 { font-size:17px; margin:0 0 10px; }
+  h3 { font-size:15px; margin:14px 0 6px; }
   .sub, .hint { color:var(--muted); }
   .sub { margin:4px 0 12px; }
   .hint { font-size:13px; margin:6px 0 0; }
@@ -23,15 +24,18 @@
   .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
   .row > input[type=text] { flex:1 1 220px; min-width:0; }
   label.field { display:block; color:var(--muted); margin:8px 0 4px; }
-  input[type=text], input[type=date], select { padding:7px 10px; font:inherit; font-size:14px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--text); max-width:100%; }
+  input[type=text], input[type=date], input[type=number], select, textarea { padding:7px 10px; font:inherit; font-size:14px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--text); max-width:100%; }
+  input[type=number] { width:6em; }
+  textarea { width:100%; min-height:4em; font-family:"Noto Sans Mono CJK SC","DejaVu Sans Mono",monospace; font-size:13px; }
   .check { display:flex; gap:8px; align-items:flex-start; margin:6px 0; }
   .check input { margin-top:5px; flex:none; }
   .check span small { display:block; color:var(--muted); font-size:13px; }
   .actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
   button { padding:7px 14px; font:inherit; font-size:14px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--text); cursor:pointer; }
   button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.small { padding:2px 8px; font-size:13px; }
   button:disabled { opacity:.5; cursor:default; }
-  button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
   [role=tablist] { display:flex; flex-wrap:wrap; gap:4px; border-bottom:1px solid var(--line); margin:8px 0 0; }
   [role=tab] { border:1px solid transparent; border-bottom:none; border-radius:6px 6px 0 0; background:none; color:var(--muted); margin-bottom:-1px; }
   [role=tab][aria-selected=true] { background:var(--card); border-color:var(--line); color:var(--text); font-weight:bold; }
@@ -44,13 +48,18 @@
   th, td { text-align:left; padding:4px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
   th { color:var(--muted); font-weight:normal; position:sticky; top:0; background:var(--card); }
   td.rel { word-break:break-all; min-width:12em; }
+  td.wrap, .wrap { word-break:break-all; }
+  td.name { min-width:6em; overflow-wrap:anywhere; }
   td.num { text-align:right; white-space:nowrap; }
+  td.act { white-space:nowrap; }
   .browser { border:1px solid var(--line); border-radius:6px; padding:8px; margin-top:8px; background:var(--bg); }
-  .browser .here { word-break:break-all; margin:6px 0; }
   .browser ul { list-style:none; margin:6px 0; padding:0; max-height:260px; overflow:auto; }
-  .browser li button { width:100%; text-align:left; border:none; background:none; padding:4px 6px; word-break:break-all; }
-  .browser li button:hover { background:var(--card); }
+  .browser li > button { width:100%; text-align:left; border:none; background:none; padding:4px 6px; word-break:break-all; }
+  .browser li > button:hover { background:var(--card); }
+  .browser li label { display:flex; gap:6px; align-items:flex-start; padding:2px 6px; word-break:break-all; }
+  .browser li label input { margin-top:5px; flex:none; }
   progress { width:100%; height:14px; margin-top:8px; }
+  details summary { cursor:pointer; margin-top:8px; }
   footer { color:var(--muted); font-size:13px; margin-top:24px; border-top:1px solid var(--line); padding-top:10px; }
   #closed { background:var(--card); border:1px solid var(--bad); color:var(--bad); border-radius:8px; padding:12px; margin-top:12px; }
 </style>
@@ -67,8 +76,12 @@
 
   <div role="tablist" id="tabs" data-t-label="tabs">
     <button role="tab" id="tab-batch" aria-controls="panel-batch" aria-selected="true" data-t="tab_batch"></button>
+    <button role="tab" id="tab-files" aria-controls="panel-files" aria-selected="false" data-t="tab_files"></button>
+    <button role="tab" id="tab-tasks" aria-controls="panel-tasks" aria-selected="false" data-t="tab_tasks"></button>
+    <button role="tab" id="tab-dedup" aria-controls="panel-dedup" aria-selected="false" data-t="tab_dedup"></button>
   </div>
 
+  <!-- ===================== folder batch ===================== -->
   <section role="tabpanel" id="panel-batch" aria-labelledby="tab-batch" tabindex="0">
     <div class="card">
       <h2 data-t="h_source"></h2>
@@ -88,7 +101,7 @@
       </div>
       <div class="actions">
         <button id="scan" class="primary" type="button" data-t="scan"></button>
-        <button id="scanCancel" type="button" data-t="cancel" hidden></button>
+        <button id="scanCancel" class="cancel" type="button" data-t="cancel" hidden></button>
       </div>
       <progress id="scanProg" hidden></progress>
       <p id="scanStatus" class="status" aria-live="polite"></p>
@@ -122,12 +135,7 @@
         <button id="outBrowse" type="button" aria-expanded="false" data-t="browse"></button>
       </div>
       <div id="browserHomeOut"></div>
-      <h2 style="margin-top:14px" data-t="h_options"></h2>
-      <div class="check"><input id="optMerge" type="checkbox" checked><label for="optMerge"><span><span data-t="opt_merge"></span><small data-t="opt_merge_d"></small></span></label></div>
-      <div class="check"><input id="optInline" type="checkbox" checked><label for="optInline"><span><span data-t="opt_inline"></span><small data-t="opt_inline_d"></small></span></label></div>
-      <div class="check"><input id="optImages" type="checkbox"><label for="optImages"><span><span data-t="opt_images"></span><small data-t="opt_images_d"></small></span></label></div>
-      <div class="check"><input id="optSheets" type="checkbox" disabled><label for="optSheets"><span><span data-t="opt_sheets"></span><small id="sheetsHint"></small></span></label></div>
-      <div class="check"><input id="optKeepDups" type="checkbox"><label for="optKeepDups"><span><span data-t="opt_dups"></span><small data-t="opt_dups_d"></small></span></label></div>
+      <div class="opts" data-prefix="b"></div>
       <fieldset id="existingBox" hidden style="border:1px solid var(--line); border-radius:6px; margin:8px 0 0">
         <legend data-t="existing_legend"></legend>
         <div class="check"><input id="exSkip" name="existing" type="radio" checked><label for="exSkip" data-t="existing_skip"></label></div>
@@ -135,48 +143,197 @@
       </fieldset>
       <div class="actions">
         <button id="run" class="primary" type="button" data-t="run"></button>
-        <button id="runCancel" type="button" data-t="cancel" hidden></button>
+        <button id="runCancel" class="cancel" type="button" data-t="cancel" hidden></button>
       </div>
       <progress id="runProg" max="100" value="0" hidden></progress>
       <p id="runStatus" class="status" aria-live="polite"></p>
     </div>
 
-    <div class="card" id="resultCard" hidden>
-      <h2 data-t="h_result"></h2>
-      <p id="resultStatus" class="status" aria-live="polite"></p>
-      <pre id="resultSummary" hidden></pre>
+    <div class="card result" id="batchResult" hidden></div>
+  </section>
+
+  <!-- ===================== chosen files ===================== -->
+  <section role="tabpanel" id="panel-files" aria-labelledby="tab-files" tabindex="0" hidden>
+    <div class="card">
+      <h2 data-t="h_chosen"></h2>
+      <p class="hint" data-t="chosen_hint"></p>
       <div class="actions">
-        <button id="open" type="button" data-t="open_out"></button>
+        <button id="filesAdd" type="button" aria-expanded="false" data-t="files_add"></button>
+        <button id="filesClear" type="button" data-t="files_clear"></button>
       </div>
-      <p id="openStatus" class="status" aria-live="polite"></p>
-      <h2 id="reportHead" style="margin-top:10px" data-t="h_report" hidden></h2>
-      <pre id="reportText" hidden></pre>
-      <details id="outputBox" hidden>
+      <div id="browserHomeFiles"></div>
+      <div class="scroll" id="filesTable" hidden>
+        <table>
+          <thead><tr><th scope="col" data-t="col_path"></th><th scope="col"><span data-t="col_remove"></span></th></tr></thead>
+          <tbody id="filesRows"></tbody>
+        </table>
+      </div>
+      <p id="filesNote" class="status" aria-live="polite"></p>
+    </div>
+    <div class="card">
+      <h2 data-t="h_output"></h2>
+      <label class="field" for="filesOut" data-t="out_label"></label>
+      <div class="row">
+        <input id="filesOut" type="text" autocomplete="off" spellcheck="false">
+        <button id="filesOutBrowse" type="button" aria-expanded="false" data-t="browse"></button>
+      </div>
+      <div id="browserHomeFilesOut"></div>
+      <p class="hint" data-t="files_out_hint"></p>
+      <div class="opts" data-prefix="f"></div>
+      <div class="actions">
+        <button id="filesRun" class="primary" type="button" data-t="run"></button>
+        <button id="filesCancel" class="cancel" type="button" data-t="cancel" hidden></button>
+      </div>
+      <progress id="filesProg" max="100" value="0" hidden></progress>
+      <p id="filesStatus" class="status" aria-live="polite"></p>
+    </div>
+    <div class="card result" id="filesResult" hidden></div>
+  </section>
+
+  <!-- ===================== incremental tasks ===================== -->
+  <section role="tabpanel" id="panel-tasks" aria-labelledby="tab-tasks" tabindex="0" hidden>
+    <div class="card">
+      <h2 data-t="h_tasks"></h2>
+      <p class="hint" data-t="tasks_hint"></p>
+      <div class="scroll">
+        <table>
+          <thead><tr><th scope="col"><span data-t="col_take"></span></th><th scope="col" data-t="col_task"></th><th scope="col" data-t="col_last"></th></tr></thead>
+          <tbody id="taskRows"></tbody>
+        </table>
+      </div>
+      <p id="tasksNote" class="status" aria-live="polite"></p>
+      <div class="row" style="margin-top:8px">
+        <label for="taskDays" data-t="days_label"></label>
+        <input id="taskDays" type="number" min="1" max="36500" value="30">
+      </div>
+      <div class="actions">
+        <button id="taskNew" type="button" data-t="task_new"></button>
+        <button id="taskPreview" type="button" data-t="task_preview"></button>
+        <button id="taskRun" class="primary" type="button" data-t="task_run"></button>
+        <button id="taskRunAll" type="button" data-t="task_run_all"></button>
+        <button id="tasksCancel" class="cancel" type="button" data-t="cancel" hidden></button>
+      </div>
+      <progress id="tasksProg" max="100" value="0" hidden></progress>
+      <p id="tasksStatus" class="status" aria-live="polite"></p>
+    </div>
+
+    <div class="card" id="taskForm" hidden>
+      <h2 id="taskFormHead"></h2>
+      <label class="field" for="taskName" data-t="task_name"></label>
+      <input id="taskName" type="text" autocomplete="off" style="width:100%">
+      <label class="field" for="taskSrc" data-t="task_src"></label>
+      <div class="row">
+        <input id="taskSrc" type="text" autocomplete="off" spellcheck="false">
+        <button id="taskSrcBrowse" type="button" aria-expanded="false" data-t="browse"></button>
+      </div>
+      <div id="browserHomeTaskSrc"></div>
+      <label class="field" for="taskOut" data-t="task_out"></label>
+      <div class="row">
+        <input id="taskOut" type="text" autocomplete="off" spellcheck="false">
+        <button id="taskOutBrowse" type="button" aria-expanded="false" data-t="browse"></button>
+      </div>
+      <div id="browserHomeTaskOut"></div>
+      <p class="hint" data-t="task_out_hint"></p>
+      <div class="actions">
+        <button id="taskSave" class="primary" type="button" data-t="save"></button>
+        <button id="taskBack" type="button" data-t="back"></button>
+      </div>
+      <p id="taskFormStatus" class="status" aria-live="polite"></p>
+    </div>
+
+    <div class="card" id="tasksResult" hidden>
+      <h2 data-t="h_result"></h2>
+      <p id="tasksResultStatus" class="status" aria-live="polite"></p>
+      <div class="scroll">
+        <table>
+          <thead><tr><th scope="col" data-t="col_task"></th><th scope="col" data-t="col_outcome"></th></tr></thead>
+          <tbody id="tasksResultRows"></tbody>
+        </table>
+      </div>
+      <div id="tasksOutputs"></div>
+    </div>
+  </section>
+
+  <!-- ===================== duplicate clean-up ===================== -->
+  <section role="tabpanel" id="panel-dedup" aria-labelledby="tab-dedup" tabindex="0" hidden>
+    <div class="card">
+      <h2 data-t="h_dedup"></h2>
+      <p class="hint" data-t="dedup_hint"></p>
+      <label class="field" for="dedupTarget" data-t="dedup_target"></label>
+      <div class="row">
+        <input id="dedupTarget" type="text" autocomplete="off" spellcheck="false">
+        <button id="dedupBrowse" type="button" aria-expanded="false" data-t="browse"></button>
+      </div>
+      <div id="browserHomeDedup"></div>
+      <label class="field" for="dedupBase" data-t="dedup_base"></label>
+      <textarea id="dedupBase" spellcheck="false"></textarea>
+      <div class="check"><input id="dedupNoDb" type="checkbox"><label for="dedupNoDb"><span><span data-t="dedup_nodb"></span><small data-t="dedup_nodb_d"></small></span></label></div>
+      <div class="actions">
+        <button id="dedupDry" class="primary" type="button" data-t="dedup_dry"></button>
+        <button id="dedupClean" type="button" data-t="dedup_clean" disabled></button>
+        <button id="dedupCancel" class="cancel" type="button" data-t="cancel" hidden></button>
+      </div>
+      <progress id="dedupProg" hidden></progress>
+      <p id="dedupStatus" class="status" aria-live="polite"></p>
+    </div>
+    <div class="card" id="dedupResult" hidden>
+      <h2 data-t="h_result"></h2>
+      <p id="dedupResultStatus" class="status" aria-live="polite"></p>
+      <h3 id="dedupReportHead" data-t="h_dedup_report" hidden></h3>
+      <pre id="dedupReport" hidden></pre>
+      <details id="dedupOutputBox" hidden>
         <summary data-t="h_output_tail"></summary>
-        <pre id="outputText"></pre>
+        <pre id="dedupOutput"></pre>
       </details>
     </div>
   </section>
 
-  <footer><span id="footRule" data-t="foot_rule"></span> <span id="version"></span></footer>
+  <footer><span data-t="foot_rule"></span> <span id="version"></span></footer>
 </main>
 
 <template id="browserTpl">
   <div class="browser">
     <div class="row">
-      <label class="hint b-rootlabel"></label>
       <select class="b-roots"></select>
       <button type="button" class="b-up"></button>
     </div>
-    <div class="here mono"></div>
+    <div class="row" style="margin-top:6px">
+      <input type="text" class="b-path mono" autocomplete="off" spellcheck="false">
+      <button type="button" class="b-go"></button>
+    </div>
     <p class="hint b-count"></p>
     <ul class="b-dirs"></ul>
+    <ul class="b-files"></ul>
     <p class="status b-status" aria-live="polite"></p>
     <div class="actions">
       <button type="button" class="primary b-pick"></button>
+      <button type="button" class="primary b-add"></button>
       <button type="button" class="b-close"></button>
     </div>
   </div>
+</template>
+
+<template id="optsTpl">
+  <h3 data-t="h_options"></h3>
+  <div class="check"><input class="o-merge" type="checkbox" checked><label><span><span data-t="opt_merge"></span><small data-t="opt_merge_d"></small></span></label></div>
+  <div class="check"><input class="o-inline" type="checkbox" checked><label><span><span data-t="opt_inline"></span><small data-t="opt_inline_d"></small></span></label></div>
+  <div class="check"><input class="o-images" type="checkbox"><label><span><span data-t="opt_images"></span><small data-t="opt_images_d"></small></span></label></div>
+  <div class="check"><input class="o-sheets" type="checkbox" disabled><label><span><span data-t="opt_sheets"></span><small class="o-sheets-hint"></small></span></label></div>
+  <div class="check"><input class="o-dups" type="checkbox"><label><span><span data-t="opt_dups"></span><small data-t="opt_dups_d"></small></span></label></div>
+</template>
+
+<template id="resultTpl">
+  <h2 data-t="h_result"></h2>
+  <p class="status r-status" aria-live="polite"></p>
+  <pre class="r-summary" hidden></pre>
+  <div class="actions"><button type="button" class="r-open" data-t="open_out"></button></div>
+  <p class="status r-open-status" aria-live="polite"></p>
+  <h3 class="r-report-head" data-t="h_report" hidden></h3>
+  <pre class="r-report" hidden></pre>
+  <details class="r-output-box" hidden>
+    <summary data-t="h_output_tail"></summary>
+    <pre class="r-output"></pre>
+  </details>
 </template>
 
 <script>
@@ -189,11 +346,11 @@ const S = {
   en: {
     title: 'Documents to knowledge base', quit: 'Quit',
     sub: 'Turns Word, Excel, PowerPoint, PDF and mail files into Markdown for a knowledge base. The conversion is done by doc2kb_core.py in this folder.',
-    tabs: 'Modes', tab_batch: 'Folder batch',
+    tabs: 'Modes', tab_batch: 'Folder batch', tab_files: 'Chosen files', tab_tasks: 'Incremental tasks', tab_dedup: 'Duplicate clean-up',
     h_source: '1. Source folder', src_label: 'Folder with the documents (absolute path or ~/…)',
     browse: 'Browse…', since_label: 'Only documents changed on or after a date',
     since_hint: 'The document\'s own time is used when it has one, else the file system time.',
-    scan: 'Scan', cancel: 'Cancel',
+    scan: 'Scan', cancel: 'Cancel', save: 'Save', back: 'Back',
     scanning: 'Scanning the folder… Archives take a while.',
     scan_failed: 'Scan failed: {0}. Check the folder and scan again.',
     scan_cancelled: 'Scan cancelled.',
@@ -204,18 +361,18 @@ const S = {
     list_summary: '{0} documents found; untick the ones you do not want.',
     list_filtered: ' {0} files older than the date are left out.',
     tick_all: 'Tick all', tick_none: 'Untick all',
-    col_take: 'Take', col_rel: 'Relative path', col_size: 'Size',
+    col_take: 'Take', col_rel: 'Relative path', col_size: 'Size', col_path: 'File', col_remove: 'Remove',
     ticked: '{0} of {1} ticked.',
-    pdf_lossy: 'Ticked PDF files: PDF loses embedded workbooks, vector graphics and heading levels. Use the original docx or pptx when you have it.',
-    pdf_missing: '{0} ticked PDF files will be skipped: pdftotext (poppler-utils) is not installed. Install it and run again to include them.',
+    pdf_lossy: 'PDF files chosen: PDF loses embedded workbooks, vector graphics and heading levels. Use the original docx or pptx when you have it.',
+    pdf_missing: '{0} PDF files will be skipped: pdftotext (poppler-utils) is not installed. Install it and run again to include them.',
     legacy_summary: '{0} legacy-format files are skipped (.doc / .xls / .ppt / .msg)',
-    legacy_hint: 'Save them as .docx / .xlsx / .pptx in an office application and scan again.',
+    legacy_hint: 'Save them as .docx / .xlsx / .pptx in an office application and run again.',
     h_output: '3. Output', out_label: 'Output folder (created when missing)',
     h_options: 'Options',
     opt_merge: 'Merge', opt_merge_d: 'Index and all text in one md; untick for one md per document.',
     opt_inline: 'Expand embedded Excel', opt_inline_d: 'Workbooks embedded in docx become tables in the text.',
     opt_images: 'Export images', opt_images_d: 'Writes picture files; without it the text keeps the image anchors and runs faster.',
-    opt_sheets: 'Contact sheets', opt_sheets_d: 'Tiles exported pictures 4×4 into numbered sheets.',
+    opt_sheets_d: 'Tiles exported pictures 4×4 into numbered sheets.', opt_sheets: 'Contact sheets',
     sheets_need_images: 'Tiles exported pictures 4×4 into numbered sheets. Needs "Export images".',
     sheets_no_tool: 'Needs ImageMagick (montage), which is not installed.',
     opt_dups: 'Keep every copy', opt_dups_d: 'By default files with the same bytes or text are kept once, the newest.',
@@ -225,39 +382,85 @@ const S = {
     progress: 'Document {0} of {1}: {2}',
     progress_last: 'Last document ({0}), then the report and index are written…',
     preparing: 'Preparing…',
-    confirm_replace: 'The output folder {0} already holds:\n{1}\n\nIt will be replaced. Start?',
+    confirm_replace: 'The output folder {0} already holds:\n{1}\n\nThese files will be replaced. Start?',
     confirm_redo: 'All {0} md files already in {1} will be replaced by new conversions. Start?',
     run_refused: 'Cannot start: {0}. Correct it and start again.',
     h_result: 'Result',
     done_ok: 'Done: {0} documents converted.',
     done_failed: 'Done, but {0} documents failed. The report\'s "Failed" section gives the reasons.',
-    done_nomatch: 'Nothing was converted: no ticked file matched. Scan again.',
+    done_nomatch: 'Nothing was converted: no chosen file matched. Scan again.',
+    done_allfailed: 'Conversion failed: none of the chosen files could be converted. The report gives the reasons.',
     done_error: 'Conversion failed: the converter exited with code {0}. The output below shows why; correct it and start again.',
     pdf_skipped: '{0} PDF files were not processed: pdftotext (poppler-utils) is missing.',
+    legacy_skipped: '{0} legacy-format files were not processed; save them as .docx / .xlsx / .pptx first.',
     cancel_merged: 'Cancelled. The merged md was not written; it is written only at the end.',
     cancel_merged_report: ' The report lists the documents finished before the cancel.',
-    cancel_single: 'Cancelled. {0} md files were written before the cancel; with "Skip them" the next run reuses them.',
+    cancel_single: 'Cancelled. {0} md files were written before the cancel; with "Skip them" a later folder batch reuses them.',
     cancel_single_report: ' The report lists them.',
     open_out: 'Open output folder', open_failed: 'Opening failed: {0}. Open the folder yourself.',
-    h_report: 'Report (summary)', h_output_tail: 'Converter output',
+    h_report: 'Report (summary)', h_output_tail: 'Program output',
+    h_chosen: '1. Files', chosen_hint: 'Add documents or archives from one or more folders; legacy formats (.doc / .xls / .ppt / .msg) are listed but not converted.',
+    files_add: 'Add files…', files_clear: 'Clear list', files_count: '{0} files chosen.', files_none: 'No file chosen yet.',
+    files_out_hint: 'Chosen files are always converted again; existing md files of the same name are replaced (you are asked first).',
+    h_tasks: 'Incremental tasks',
+    tasks_hint: 'A task remembers when it last ran in its output folder and converts only documents changed since then into a dated md. The command line and cron use the same tasks file.',
+    col_task: 'Task', col_last: 'Last run', col_outcome: 'Outcome',
+    never_run: 'not run yet', src_missing_short: 'source folder missing',
+    edit: 'Edit', del: 'Delete',
+    days_label: 'Tasks without a last run take the documents changed in the last … days:',
+    task_new: 'New task', task_preview: 'Preview ticked', task_run: 'Run ticked', task_run_all: 'Run all',
+    tasks_none: 'No task yet. "New task" creates one.',
+    tasks_none_ticked: 'Tick at least one task first.',
+    tasks_count: '{0} tasks; {1} ticked.',
+    h_task_new: 'New task', h_task_edit: 'Edit task "{0}"',
+    task_name: 'Name', task_src: 'Source folder (the documents to watch)', task_out: 'Output folder (for the incremental md files)',
+    task_out_hint: 'The output folder also keeps the task\'s last-run time and text fingerprints; keep it separate from folder-batch output.',
+    task_saved: 'Saved.', task_save_failed: 'Saving failed: {0}. Correct it and save again.',
+    task_out_changed: 'The output folder changes from {0} to {1}. The last-run time and the text fingerprints stay in the old folder, so the next run counts as a first run (the last {2} days). Save?',
+    task_del_confirm: 'Delete the task "{0}"?\n\nOnly the task is removed; its source folder, output folder and md files stay.',
+    task_del_failed: 'Deleting failed: {0}.',
+    tasks_running: 'Task {0} of {1}: {2}',
+    tasks_done: '{0} tasks run.', tasks_done_preview: 'Preview of {0} tasks; nothing was written.',
+    tasks_some_failed: '{0} of {1} tasks failed; see the outcome of each below.',
+    tasks_cancelled: 'Cancelled; tasks not reached did not run.',
+    out_ok: 'Done', out_ok_first: 'Done (first run: last {0} days)', out_preview: 'Preview',
+    out_1: 'Failed: option or environment error.', out_2: 'Failed: processing error. The last-run time did not move, so the next run tries again.',
+    out_3: 'Not run: no last-run time yet.', out_none: 'Not run: the source folder is missing. Edit the task.',
+    out_other: 'Failed: exit code {0}.', out_log: 'Log: {0}',
+    h_dedup: 'Duplicate clean-up',
+    dedup_hint: 'Removes sections of a merged or incremental md whose text is already in other md files (after folders were moved or renamed). Run a dry run first and check its report.',
+    dedup_target: 'File to clean (a merged or incremental md)',
+    dedup_base: 'Compare with (one md file or folder per line; empty: the other md files next to it)',
+    dedup_nodb: 'Do not write the text fingerprint file', dedup_nodb_d: 'By default .doc2kb_watch_fp is written next to the file, so later incremental runs skip this text.',
+    dedup_dry: 'Dry run', dedup_clean: 'Clean up', h_dedup_report: 'Report',
+    dedup_running: 'Comparing… Large files take a while.',
+    dedup_dry_result: 'Dry run: {0} of {1} sections duplicate existing text, {2} would stay. Nothing changed.',
+    dedup_nothing: 'No duplicate text; nothing to clean up.',
+    dedup_done: 'Cleaned up: {0} sections removed, {1} kept. The original was backed up as {2}.',
+    dedup_done_none: 'No duplicate text; the file was not changed.',
+    dedup_failed: 'Clean-up failed: exit code {0}. The output below shows why; correct it and try again.',
+    dedup_refused: 'Cannot start: {0}. Correct it and try again.',
+    dedup_confirm: 'Remove {0} of {1} sections from\n{2}?\n\nThe original is first backed up as {2}.bak-<time>.',
+    dedup_cancelled: 'Cancelled; the file was not changed.',
     foot_rule: 'Closing this page stops the service; "Quit" stops it at once. A running task is finished first.',
     version: 'Version {0}',
     closed: 'The service has stopped; you can close this page. Start it again with the launcher.',
     closed_wait: 'The service stops when the current task ends; you can close this page.',
     quit_running: 'A task is running. The service stops when it ends.\n\nQuit?',
-    b_roots: 'Start at', b_up: 'Up one level', b_pick: 'Use this folder', b_close: 'Close',
-    b_count: '{0} documents or archives directly in this folder.', b_empty: 'No sub-folders.',
-    b_failed: 'Opening the folder failed: {0}.',
+    b_roots: 'Start at', b_up: 'Up one level', b_go: 'Go', b_pick: 'Use this folder', b_add: 'Add ticked files', b_close: 'Close',
+    b_count: '{0} documents or archives directly in this folder.', b_md_count: '{0} md files directly in this folder.',
+    b_empty: 'No sub-folders.', b_failed: 'Opening the folder failed: {0}.', b_path: 'Folder',
+    b_legacy: '(legacy format, not converted)',
     load_failed: 'Loading failed: {0}. Reload the page; if that fails, start the tool again.'
   },
   zh: {
     title: '文档转知识库', quit: '退出',
     sub: '把 Word、Excel、PowerPoint、PDF 和邮件转成供知识库使用的 Markdown，转换由同目录的 doc2kb_core.py 完成。',
-    tabs: '模式', tab_batch: '目录批量',
+    tabs: '模式', tab_batch: '目录批量', tab_files: '指定文件', tab_tasks: '增量任务', tab_dedup: '清理重复',
     h_source: '1. 源目录', src_label: '文档所在目录（绝对路径或 ~/ 开头）',
     browse: '浏览……', since_label: '只处理某个日期（含当天）之后修改的文档',
     since_hint: '时间优先取文档内部属性，取不到时用文件系统时间。',
-    scan: '扫描', cancel: '取消',
+    scan: '扫描', cancel: '取消', save: '保存', back: '返回',
     scanning: '正在扫描目录……压缩包较多时需要一些时间。',
     scan_failed: '扫描失败：{0}。请检查目录后重新扫描。',
     scan_cancelled: '已取消扫描。',
@@ -268,18 +471,18 @@ const S = {
     list_summary: '共找到 {0} 个文档，取消勾选可排除不想处理的文件。',
     list_filtered: '另有 {0} 个文件早于所选日期，已排除。',
     tick_all: '全部勾选', tick_none: '全部取消',
-    col_take: '处理', col_rel: '相对路径', col_size: '大小',
+    col_take: '选择', col_rel: '相对路径', col_size: '大小', col_path: '文件', col_remove: '移除',
     ticked: '已勾选 {0} / {1} 个。',
-    pdf_lossy: '勾选了 PDF：PDF 已丢失嵌入的 Excel 附件、矢量图和标题层级，能拿到原始 docx、pptx 时建议改用原始文件。',
-    pdf_missing: '勾选的 {0} 个 PDF 将被跳过：未安装 pdftotext（poppler-utils）。安装后重新运行即可纳入。',
+    pdf_lossy: '选了 PDF：PDF 已丢失嵌入的 Excel 附件、矢量图和标题层级，能拿到原始 docx、pptx 时建议改用原始文件。',
+    pdf_missing: '{0} 个 PDF 将被跳过：未安装 pdftotext（poppler-utils）。安装后重新运行即可纳入。',
     legacy_summary: '{0} 个旧版格式文件将被跳过（.doc / .xls / .ppt / .msg）',
-    legacy_hint: '请用办公软件另存为 .docx / .xlsx / .pptx 后重新扫描。',
+    legacy_hint: '请用办公软件另存为 .docx / .xlsx / .pptx 后重新运行。',
     h_output: '3. 输出', out_label: '输出目录（不存在时自动创建）',
     h_options: '选项',
     opt_merge: '合并输出', opt_merge_d: '索引与全部正文写进一个 md；取消则每份文档一个 md。',
     opt_inline: '展开内嵌 Excel', opt_inline_d: '把 docx 里嵌入的 Excel 附件展开成正文表格。',
     opt_images: '导出图片', opt_images_d: '写出图片文件；不勾选时正文仍保留图片锚点，处理更快。',
-    opt_sheets: '合并拼图', opt_sheets_d: '把导出的图片按 4×4 拼成带编号的大图。',
+    opt_sheets_d: '把导出的图片按 4×4 拼成带编号的大图。', opt_sheets: '合并拼图',
     sheets_need_images: '把导出的图片按 4×4 拼成带编号的大图，需先勾选「导出图片」。',
     sheets_no_tool: '需要 ImageMagick（montage 命令），本机未安装。',
     opt_dups: '保留全部副本', opt_dups_d: '默认字节或正文相同的文件只保留一份（文档时间最新的）。',
@@ -289,29 +492,75 @@ const S = {
     progress: '第 {0}/{1} 份：{2}',
     progress_last: '最后一份（{0}），随后写汇总与索引……',
     preparing: '准备中……',
-    confirm_replace: '输出目录 {0} 中已有：\n{1}\n\n将被替换。确定开始？',
+    confirm_replace: '输出目录 {0} 中已有：\n{1}\n\n这些文件将被替换。确定开始？',
     confirm_redo: '{1} 中已有的 {0} 个 md 文件将被重新转换的结果替换。确定开始？',
     run_refused: '无法开始：{0}。修正后重新开始。',
     h_result: '结果',
     done_ok: '完成：转换 {0} 份文档。',
     done_failed: '完成，但有 {0} 份失败，原因见报告的「失败」一节。',
     done_nomatch: '没有转换任何文件：勾选的文件都不符合条件。请重新扫描。',
+    done_allfailed: '转换失败：所选文件都没能转换，原因见报告。',
     done_error: '转换失败：转换器退出码 {0}。原因见下方输出，修正后重新开始。',
     pdf_skipped: '{0} 个 PDF 未处理：缺少 pdftotext（poppler-utils）。',
+    legacy_skipped: '{0} 个旧版格式文件未处理，请先另存为 .docx / .xlsx / .pptx。',
     cancel_merged: '已取消。合并 md 只在最后写出，本次没有写出。',
     cancel_merged_report: '报告记录了取消前处理完的文档。',
-    cancel_single: '已取消。取消前已写出 {0} 个 md；下次选「跳过，沿用已有结果」会沿用它们。',
+    cancel_single: '已取消。取消前已写出 {0} 个 md；之后「目录批量」选「跳过，沿用已有结果」会沿用它们。',
     cancel_single_report: '报告记录了这些文档。',
     open_out: '打开输出目录', open_failed: '打开失败：{0}。请手动打开该目录。',
-    h_report: '报告（摘要）', h_output_tail: '转换器输出',
+    h_report: '报告（摘要）', h_output_tail: '程序输出',
+    h_chosen: '1. 文件', chosen_hint: '可从一个或多个目录添加文档或压缩包；旧版格式（.doc / .xls / .ppt / .msg）会列出但不转换。',
+    files_add: '添加文件……', files_clear: '清空列表', files_count: '已选 {0} 个文件。', files_none: '还没有选择文件。',
+    files_out_hint: '指定的文件每次都重新转换，输出目录中同名的 md 会被替换（替换前先确认）。',
+    h_tasks: '增量任务',
+    tasks_hint: '增量任务在输出目录里记住上次运行时刻，每次只把之后修改过的文档转成一个带日期的 md。命令行与定时任务使用同一个任务文件。',
+    col_task: '任务', col_last: '上次运行', col_outcome: '结果',
+    never_run: '尚未运行', src_missing_short: '源目录不存在',
+    edit: '编辑', del: '删除',
+    days_label: '尚未运行过的任务，处理最近多少天内修改的文档：',
+    task_new: '新增任务', task_preview: '预览选中', task_run: '执行选中', task_run_all: '全部执行',
+    tasks_none: '还没有增量任务，点「新增任务」新建一条。',
+    tasks_none_ticked: '请先勾选至少一个任务。',
+    tasks_count: '共 {0} 个任务，已勾选 {1} 个。',
+    h_task_new: '新增任务', h_task_edit: '编辑任务「{0}」',
+    task_name: '任务名', task_src: '源目录（要监控的文档目录）', task_out: '输出目录（增量 md 存放处）',
+    task_out_hint: '输出目录同时保存该任务的上次运行时刻和正文指纹库，建议与「目录批量」的输出分开。',
+    task_saved: '已保存。', task_save_failed: '保存失败：{0}。修正后重新保存。',
+    task_out_changed: '输出目录将从 {0} 改为 {1}。上次运行时刻和正文指纹库留在旧目录，下次运行按首次运行处理（最近 {2} 天）。确定保存？',
+    task_del_confirm: '确定删除任务「{0}」？\n\n只删除任务配置，源目录、输出目录和已生成的 md 文件都不受影响。',
+    task_del_failed: '删除失败：{0}。',
+    tasks_running: '第 {0}/{1} 个任务：{2}',
+    tasks_done: '已执行 {0} 个任务。', tasks_done_preview: '已预览 {0} 个任务，没有写出任何文件。',
+    tasks_some_failed: '{1} 个任务中有 {0} 个失败，各任务结果见下表。',
+    tasks_cancelled: '已取消，尚未轮到的任务没有执行。',
+    out_ok: '完成', out_ok_first: '完成（首次运行：最近 {0} 天）', out_preview: '预览',
+    out_1: '失败：参数或环境错误。', out_2: '失败：处理出错。上次运行时刻未推进，下次运行会重试。',
+    out_3: '未运行：尚无上次运行时刻。', out_none: '未运行：源目录不存在。请编辑任务。',
+    out_other: '失败：退出码 {0}。', out_log: '日志：{0}',
+    h_dedup: '清理重复',
+    dedup_hint: '目录移动或改名后，删除合并或增量 md 中正文已在其他 md 里出现过的文档节。先试运行并核对报告。',
+    dedup_target: '要清理的文件（合并或增量 md）',
+    dedup_base: '比对基准（每行一个 md 文件或目录；留空则用同目录的其他 md）',
+    dedup_nodb: '不写正文指纹库', dedup_nodb_d: '默认在该文件旁写 .doc2kb_watch_fp，以后增量运行会跳过这些正文。',
+    dedup_dry: '试运行', dedup_clean: '清理', h_dedup_report: '报告',
+    dedup_running: '正在比对……文件较大时需要一些时间。',
+    dedup_dry_result: '试运行：共 {1} 节，其中 {0} 节与已有内容重复，将保留 {2} 节。文件未改动。',
+    dedup_nothing: '没有重复内容，无需清理。',
+    dedup_done: '清理完成：删除 {0} 节，保留 {1} 节。原文件已备份为 {2}。',
+    dedup_done_none: '没有重复内容，文件未改动。',
+    dedup_failed: '清理失败：退出码 {0}。原因见下方输出，修正后重试。',
+    dedup_refused: '无法开始：{0}。修正后重试。',
+    dedup_confirm: '将从\n{2}\n删除 {0} 节（共 {1} 节）。\n\n原文件会先备份为 {2}.bak-<时间>。确定清理？',
+    dedup_cancelled: '已取消，文件未改动。',
     foot_rule: '关闭本页后服务自动退出；点「退出」立即结束。有任务运行时，等任务结束再退出。',
     version: '版本 {0}',
     closed: '服务已退出，可关闭本页。需要再用时重新双击「双击运行」。',
     closed_wait: '服务将在当前任务结束后退出，可关闭本页。',
     quit_running: '有任务正在运行，服务会等它结束后再退出。\n\n确定退出？',
-    b_roots: '从这里开始', b_up: '上一级', b_pick: '选这个目录', b_close: '收起',
-    b_count: '本目录下直接有 {0} 个文档或压缩包。', b_empty: '没有子目录。',
-    b_failed: '打开目录失败：{0}。',
+    b_roots: '从这里开始', b_up: '上一级', b_go: '转到', b_pick: '选这个目录', b_add: '添加勾选的文件', b_close: '收起',
+    b_count: '本目录下直接有 {0} 个文档或压缩包。', b_md_count: '本目录下直接有 {0} 个 md 文件。',
+    b_empty: '没有子目录。', b_failed: '打开目录失败：{0}。', b_path: '目录',
+    b_legacy: '（旧版格式，不转换）',
     load_failed: '读取失败：{0}。请刷新页面；仍不行时重新启动工具。'
   }
 };
@@ -320,14 +569,13 @@ function t(key) {
   const args = Array.prototype.slice.call(arguments, 1);
   return (L[key] || key).replace(/\{(\d)\}/g, (m, i) => String(args[+i]));
 }
-function applyTexts() {
-  document.querySelectorAll('[data-t]').forEach(el => { el.textContent = t(el.dataset.t); });
-  document.querySelectorAll('[data-t-label]').forEach(el => { el.setAttribute('aria-label', t(el.dataset.tLabel)); });
+function applyTexts(root) {
+  (root || document).querySelectorAll('[data-t]').forEach(el => { el.textContent = t(el.dataset.t); });
+  (root || document).querySelectorAll('[data-t-label]').forEach(el => { el.setAttribute('aria-label', t(el.dataset.tLabel)); });
   document.title = t('title');
 }
-applyTexts();
 
-let alive = true, status = null, pollTimer = null, jobRunning = false, scan = null, outEdited = false;
+let alive = true, status = null, pollTimer = null, jobRunning = false, jobKind = null;
 
 function api(path, opts) {
   opts = opts || {};
@@ -343,15 +591,26 @@ function post(path, body) {
 function say(el, text, kind) {
   el = typeof el === 'string' ? $(el) : el;
   el.textContent = text || '';
-  el.className = 'status' + (kind ? ' ' + kind : '');
+  el.classList.remove('ok', 'warn', 'bad', 'info');   // other classes (hooks like r-status) stay
+  el.classList.add('status');
+  if (kind) el.classList.add(kind);
 }
+function cellText(tr, text, cls) {
+  const td = document.createElement('td');
+  td.textContent = text;
+  if (cls) td.className = cls;
+  tr.appendChild(td);
+  return td;
+}
+function dirname(p) { const i = p.lastIndexOf('/'); return i > 0 ? p.slice(0, i) : '/'; }
+function joinPath(dir, name) { return dir === '/' ? '/' + name : dir + '/' + name; }
 
 function serviceGone(msg) {
   if (!alive) return;
   alive = false;
   $('closed').textContent = msg || t('closed');
   $('closed').hidden = false;
-  document.querySelectorAll('button, input, select').forEach(el => { el.disabled = true; });
+  document.querySelectorAll('button, input, select, textarea').forEach(el => { el.disabled = true; });
   if (pollTimer) clearInterval(pollTimer);
 }
 
@@ -368,14 +627,15 @@ window.addEventListener('pagehide', () => {
 
 // ---------- tabs: arrow keys, Home and End move between them
 const tabs = Array.prototype.slice.call(document.querySelectorAll('[role=tab]'));
-function selectTab(tab) {
+function selectTab(tab, focus) {
   tabs.forEach(x => {
     const on = x === tab;
     x.setAttribute('aria-selected', on ? 'true' : 'false');
     x.tabIndex = on ? 0 : -1;
     $(x.getAttribute('aria-controls')).hidden = !on;
   });
-  tab.focus();
+  if (focus !== false) tab.focus();
+  if (tab.id === 'tab-tasks') loadTasks();
 }
 tabs.forEach((tab, i) => {
   tab.tabIndex = i === 0 ? 0 : -1;
@@ -391,6 +651,7 @@ tabs.forEach((tab, i) => {
 });
 
 // ---------- folder browser (the service lists folders: a browser cannot hand out real paths)
+// mode 'dir' picks a folder, 'files' adds ticked documents, 'md' picks one md file
 let openBrowser = null;
 function closeBrowser() {
   if (!openBrowser) return;
@@ -399,32 +660,39 @@ function closeBrowser() {
   openBrowser.button.focus();
   openBrowser = null;
 }
-function joinPath(dir, name) { return dir === '/' ? '/' + name : dir + '/' + name; }
-function showBrowser(input, button, home) {
-  if (openBrowser && openBrowser.input === input) { closeBrowser(); return; }
+function showBrowser(button, home, opts) {
+  if (openBrowser && openBrowser.button === button) { closeBrowser(); return; }
   closeBrowser();
   const box = $('browserTpl').content.firstElementChild.cloneNode(true);
   $(home).appendChild(box);
   button.setAttribute('aria-expanded', 'true');
   const q = c => box.querySelector(c);
-  q('.b-rootlabel').textContent = t('b_roots');
   q('.b-up').textContent = t('b_up');
+  q('.b-go').textContent = t('b_go');
   q('.b-pick').textContent = t('b_pick');
+  q('.b-add').textContent = t('b_add');
   q('.b-close').textContent = t('b_close');
+  q('.b-pick').hidden = opts.mode !== 'dir';
+  q('.b-add').hidden = opts.mode !== 'files';
+  q('.b-path').setAttribute('aria-label', t('b_path'));
   const roots = q('.b-roots');
   roots.setAttribute('aria-label', t('b_roots'));
   (status ? status.roots : ['/']).forEach(r => {
     const o = document.createElement('option'); o.value = r; o.textContent = r; roots.appendChild(o);
   });
-  const st = {box: box, input: input, button: button, path: null, parent: null};
+  const st = {box: box, button: button, path: null, parent: null, seq: 0};
   openBrowser = st;
   function load(path) {
+    const seq = ++st.seq, box = q('.b-path');
+    box.value = path;
     return api('/api/ls?path=' + encodeURIComponent(path)).then(d => {
+      if (seq !== st.seq) return;   // a later request (the user moved on) wins
       st.path = d.path; st.parent = d.parent;
-      q('.here').textContent = d.path;
+      if (box.value === path) box.value = d.path;   // never overwrite what the user is typing
       q('.b-up').disabled = !d.parent;
-      const docs = d.files.filter(f => f.kind !== 'legacy').length;
-      q('.b-count').textContent = t('b_count', docs);
+      const docs = d.files.filter(f => f.kind === 'doc' || f.kind === 'archive').length;
+      const mds = d.files.filter(f => f.kind === 'md');
+      q('.b-count').textContent = opts.mode === 'md' ? t('b_md_count', mds.length) : t('b_count', docs);
       const ul = q('.b-dirs'); ul.textContent = '';
       if (!d.dirs.length) {
         const li = document.createElement('li'); li.className = 'hint'; li.textContent = t('b_empty'); ul.appendChild(li);
@@ -435,25 +703,134 @@ function showBrowser(input, button, home) {
         b.addEventListener('click', () => load(joinPath(d.path, name)).then(() => { const f = q('.b-dirs button'); if (f) f.focus(); }));
         li.appendChild(b); ul.appendChild(li);
       });
+      const fl = q('.b-files'); fl.textContent = '';
+      if (opts.mode === 'files') {
+        d.files.filter(f => f.kind !== 'md').forEach(f => {
+          const li = document.createElement('li'), lab = document.createElement('label'), c = document.createElement('input');
+          c.type = 'checkbox'; c.dataset.name = f.name;
+          const span = document.createElement('span');
+          span.textContent = f.name + '  ' + f.size + (f.kind === 'legacy' ? '  ' + t('b_legacy') : '');
+          lab.appendChild(c); lab.appendChild(span); li.appendChild(lab); fl.appendChild(li);
+        });
+      } else if (opts.mode === 'md') {
+        mds.forEach(f => {
+          const li = document.createElement('li'), b = document.createElement('button');
+          b.type = 'button'; b.textContent = f.name + '  ' + f.size;
+          b.addEventListener('click', () => { opts.onPick(joinPath(d.path, f.name)); closeBrowser(); });
+          li.appendChild(b); fl.appendChild(li);
+        });
+      }
       say(q('.b-status'), '');
-    }).catch(e => say(q('.b-status'), t('b_failed', e.message), 'bad'));
+    }).catch(e => { if (seq === st.seq) say(q('.b-status'), t('b_failed', e.message), 'bad'); });
   }
   roots.addEventListener('change', () => load(roots.value));
   q('.b-up').addEventListener('click', () => { if (st.parent) load(st.parent); });
-  q('.b-pick').addEventListener('click', () => {
-    if (!st.path) return;
-    input.value = st.path;
-    input.dispatchEvent(new Event('input'));
-    closeBrowser();
+  q('.b-go').addEventListener('click', () => load(q('.b-path').value.trim()));
+  q('.b-path').addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); load(q('.b-path').value.trim()); } });
+  q('.b-pick').addEventListener('click', () => { if (st.path) { opts.onPick(st.path); closeBrowser(); } });
+  q('.b-add').addEventListener('click', () => {
+    const names = Array.prototype.slice.call(box.querySelectorAll('.b-files input:checked')).map(c => c.dataset.name);
+    opts.onAdd(names.map(n => joinPath(st.path, n)));
+    box.querySelectorAll('.b-files input:checked').forEach(c => { c.checked = false; });
   });
   q('.b-close').addEventListener('click', closeBrowser);
   box.addEventListener('keydown', ev => { if (ev.key === 'Escape') { ev.preventDefault(); closeBrowser(); } });
-  load(input.value.trim() || (status && status.home) || '/').then(() => roots.focus(), () => roots.focus());
+  const start = (opts.start && opts.start()) || (status && status.home) || '/';
+  load(start).then(() => roots.focus(), () => roots.focus());
 }
-$('srcBrowse').addEventListener('click', () => showBrowser($('src'), $('srcBrowse'), 'browserHomeSrc'));
-$('outBrowse').addEventListener('click', () => showBrowser($('out'), $('outBrowse'), 'browserHomeOut'));
+function pickInto(input) {
+  return path => { input.value = path; input.dispatchEvent(new Event('input')); };
+}
+function dirOf(input) { return () => input.value.trim(); }
+$('srcBrowse').addEventListener('click', () => showBrowser($('srcBrowse'), 'browserHomeSrc', {mode: 'dir', start: dirOf($('src')), onPick: pickInto($('src'))}));
+$('outBrowse').addEventListener('click', () => showBrowser($('outBrowse'), 'browserHomeOut', {mode: 'dir', start: dirOf($('out')), onPick: pickInto($('out'))}));
 
-// ---------- step 1: source and scan
+// ---------- option blocks (folder batch and chosen files share them)
+document.querySelectorAll('.opts').forEach(box => {
+  box.appendChild($('optsTpl').content.cloneNode(true));
+  const pre = box.dataset.prefix;
+  box.querySelectorAll('.check').forEach((row, i) => {
+    const input = row.querySelector('input'), label = row.querySelector('label');
+    input.id = pre + '-opt' + i; label.htmlFor = input.id;
+  });
+  box.querySelector('.o-merge').addEventListener('change', syncOptions);
+  box.querySelector('.o-images').addEventListener('change', syncOptions);
+});
+function opt(prefix, cls) { return document.querySelector('.opts[data-prefix="' + prefix + '"] .' + cls); }
+function optionsBody(prefix) {
+  return {merge: opt(prefix, 'o-merge').checked, inline: opt(prefix, 'o-inline').checked,
+          images: opt(prefix, 'o-images').checked, sheets: opt(prefix, 'o-sheets').checked,
+          keep_dups: opt(prefix, 'o-dups').checked};
+}
+function syncOptions() {
+  const montage = status && status.tools.montage;
+  ['b', 'f'].forEach(prefix => {
+    const images = opt(prefix, 'o-images'), sheets = opt(prefix, 'o-sheets');
+    sheets.disabled = !montage || !images.checked || jobRunning;
+    if (sheets.disabled) sheets.checked = false;
+    opt(prefix, 'o-sheets-hint').textContent = !montage ? t('sheets_no_tool') : (images.checked ? t('opt_sheets_d') : t('sheets_need_images'));
+  });
+  $('existingBox').hidden = opt('b', 'o-merge').checked;
+}
+
+// ---------- result block of a conversion (folder batch and chosen files)
+document.querySelectorAll('.result').forEach(card => {
+  card.appendChild($('resultTpl').content.cloneNode(true));
+  card.querySelector('.r-open').addEventListener('click', () => {
+    post('/api/open').then(() => say(card.querySelector('.r-open-status'), ''))
+      .catch(e => say(card.querySelector('.r-open-status'), t('open_failed', e.message), 'bad'));
+  });
+});
+function renderConversion(card, job) {
+  const r = job.result || {}, p = job.params, st = r.stats || {};
+  const q = c => card.querySelector(c);
+  card.hidden = false;
+  const lines = [];
+  let kind = 'ok';
+  if (job.state === 'cancelled') {
+    kind = 'warn';
+    if (p.merge) lines.push(t('cancel_merged') + (r.report ? t('cancel_merged_report') : ''));
+    else lines.push(t('cancel_single', r.written_md || 0) + (r.report ? t('cancel_single_report') : ''));
+  } else if (job.rc === 0) {
+    if (r.failed_n) { kind = 'warn'; lines.push(t('done_failed', r.failed_n)); }
+    else lines.push(t('done_ok', st.new || 0));
+  } else if (job.rc === 10) {
+    kind = 'warn'; lines.push(t('done_nomatch'));
+  } else if (job.rc === 4) {
+    kind = 'bad'; lines.push(t('done_allfailed'));
+  } else {
+    kind = 'bad'; lines.push(t('done_error', job.rc));
+  }
+  if ((r.skipped_pdf || []).length) { lines.push(t('pdf_skipped', r.skipped_pdf.length)); if (kind === 'ok') kind = 'warn'; }
+  if ((r.skipped_legacy || []).length) { lines.push(t('legacy_skipped', r.skipped_legacy.length)); if (kind === 'ok') kind = 'warn'; }
+  say(q('.r-status'), lines.join('\n'), kind);
+  q('.r-summary').hidden = !(r.summary && r.summary.length);
+  q('.r-summary').textContent = (r.summary || []).join('\n');
+  q('.r-report-head').hidden = q('.r-report').hidden = !r.report;
+  q('.r-report').textContent = r.report || '';
+  q('.r-output-box').hidden = !job.output;
+  q('.r-output-box').open = kind === 'bad';
+  q('.r-output').textContent = job.output || '';
+  q('.r-open').hidden = !(status && status.tools['xdg-open']);
+  say(q('.r-open-status'), '');
+  q('.r-status').scrollIntoView({block: 'nearest'});
+}
+function renderProgress(prog, line, job) {
+  if (!job.total) { say(line, t('preparing'), 'info'); prog.removeAttribute('value'); return; }
+  prog.value = Math.floor((job.cur - 1) * 100 / job.total);
+  say(line, job.cur >= job.total ? t('progress_last', job.current) : t('progress', job.cur, job.total, job.current), 'info');
+}
+// confirm what a run would replace; resolves to true when the run may start
+function confirmRun(body) {
+  return post('/api/check', body).then(c => {
+    if (c.replace.length) return confirm(t('confirm_replace', c.out, c.replace.join('\n')));
+    if (body.force && c.existing_md) return confirm(t('confirm_redo', c.existing_md, c.out));
+    return true;
+  });
+}
+
+// ---------- folder batch
+let scan = null, outEdited = false;
 function threeMonthsAgo() {
   const d = new Date(); d.setMonth(d.getMonth() - 3);
   const p = n => (n < 10 ? '0' : '') + n;
@@ -463,7 +840,7 @@ $('since').value = threeMonthsAgo();
 $('useSince').addEventListener('change', () => { $('sinceRow').hidden = !$('useSince').checked; });
 $('src').addEventListener('input', () => {
   scan = null;
-  $('listCard').hidden = true; $('runCard').hidden = true; $('resultCard').hidden = true;
+  $('listCard').hidden = true; $('runCard').hidden = true; $('batchResult').hidden = true;
   say('scanStatus', '');
 });
 $('out').addEventListener('input', () => { outEdited = true; });
@@ -477,7 +854,6 @@ $('scan').addEventListener('click', () => {
     say('scanStatus', t('scan_failed', e.message), 'bad');
   });
 });
-$('scanCancel').addEventListener('click', () => post('/api/cancel').catch(() => {}));
 
 function renderScan(job) {
   const r = job.result || {};
@@ -488,23 +864,18 @@ function renderScan(job) {
     return;
   }
   scan = {src: job.params.src, since: job.params.since, files: r.files};
-  if (!r.files.length) {
-    say('scanStatus', r.filtered ? t('scan_none_filtered', r.filtered) : t('scan_none'), 'warn');
-  } else {
-    say('scanStatus', t('scan_done', r.files.length), 'ok');
-  }
+  say('scanStatus', r.files.length ? t('scan_done', r.files.length) : (r.filtered ? t('scan_none_filtered', r.filtered) : t('scan_none')),
+      r.files.length ? 'ok' : 'warn');
   const tb = $('fileRows'); tb.textContent = '';
   r.files.forEach((f, i) => {
     const tr = document.createElement('tr');
     const c0 = document.createElement('td'), box = document.createElement('input');
     box.type = 'checkbox'; box.checked = true; box.id = 'f' + i; box.dataset.rel = f.rel;
-    box.setAttribute('aria-label', f.rel);
     box.addEventListener('change', updateTicked);
     c0.appendChild(box);
     const c1 = document.createElement('td'); c1.className = 'rel';
     const lab = document.createElement('label'); lab.htmlFor = box.id; lab.textContent = f.rel; c1.appendChild(lab);
-    const c2 = document.createElement('td'); c2.className = 'num'; c2.textContent = f.size;
-    tr.appendChild(c0); tr.appendChild(c1); tr.appendChild(c2); tb.appendChild(tr);
+    tr.appendChild(c0); tr.appendChild(c1); cellText(tr, f.size, 'num'); tb.appendChild(tr);
   });
   $('listSummary').textContent = t('list_summary', r.files.length) + (r.filtered ? t('list_filtered', r.filtered) : '');
   $('legacyBox').hidden = !r.legacy.length;
@@ -517,123 +888,265 @@ function renderScan(job) {
   if (!outEdited || !$('out').value.trim()) { $('out').value = r.out_default; outEdited = false; }
   updateTicked();
 }
-
 function tickedRels() {
   return Array.prototype.slice.call(document.querySelectorAll('#fileRows input:checked')).map(b => b.dataset.rel);
 }
+function pdfNote(paths) {
+  const pdfs = paths.filter(r => /\.pdf$/i.test(r)).length;
+  if (!pdfs) return '';
+  return status && !status.tools.pdftotext ? t('pdf_missing', pdfs) : t('pdf_lossy');
+}
 function updateTicked() {
-  const rels = tickedRels(), total = scan ? scan.files.length : 0;
-  const pdfs = rels.filter(r => /\.pdf$/i.test(r)).length;
-  let text = t('ticked', rels.length, total), kind = 'info';
-  if (pdfs) {
-    text += '\n' + (status && !status.tools.pdftotext ? t('pdf_missing', pdfs) : t('pdf_lossy'));
-    kind = 'warn';
-  }
-  say('listNote', text, kind);
+  const rels = tickedRels(), total = scan ? scan.files.length : 0, note = pdfNote(rels);
+  say('listNote', t('ticked', rels.length, total) + (note ? '\n' + note : ''), note ? 'warn' : 'info');
   if (!jobRunning) $('run').disabled = !rels.length;
 }
 $('all').addEventListener('click', () => { document.querySelectorAll('#fileRows input').forEach(b => { b.checked = true; }); updateTicked(); });
 $('none').addEventListener('click', () => { document.querySelectorAll('#fileRows input').forEach(b => { b.checked = false; }); updateTicked(); });
 
-// ---------- step 3: options and run
-function syncOptions() {
-  const montage = status && status.tools.montage;
-  const sheets = $('optSheets');
-  sheets.disabled = !montage || !$('optImages').checked || jobRunning;
-  if (sheets.disabled) sheets.checked = false;
-  $('sheetsHint').textContent = !montage ? t('sheets_no_tool') : ($('optImages').checked ? t('opt_sheets_d') : t('sheets_need_images'));
-  $('existingBox').hidden = $('optMerge').checked;
-}
-['optMerge', 'optImages'].forEach(id => $(id).addEventListener('change', syncOptions));
-
-function runBody() {
-  return {
-    src: scan.src, since: scan.since, out: $('out').value, only: tickedRels(),
-    merge: $('optMerge').checked, inline: $('optInline').checked, images: $('optImages').checked,
-    sheets: $('optSheets').checked, keep_dups: $('optKeepDups').checked,
-    force: !$('optMerge').checked && $('exRedo').checked
-  };
-}
 $('run').addEventListener('click', () => {
   if (!scan) return;
-  const body = runBody();
-  $('run').disabled = true;
-  post('/api/check', body).then(c => {
-    let ok = true;
-    if (c.replace.length) ok = confirm(t('confirm_replace', c.out, c.replace.join('\n')));
-    else if (body.force && c.existing_md) ok = confirm(t('confirm_redo', c.existing_md, c.out));
-    if (!ok) { $('run').disabled = false; return; }
-    say('runStatus', t('starting'), 'info');
-    $('resultCard').hidden = true;
-    setBusy(true, 'run');
+  const merge = opt('b', 'o-merge').checked;
+  const body = Object.assign({src: scan.src, since: scan.since, out: $('out').value, only: tickedRels(),
+                              force: !merge && $('exRedo').checked}, optionsBody('b'));
+  startConversion(body, 'run', 'runStatus', 'batchResult');
+});
+function startConversion(body, kind, statusId, resultId) {
+  $(kind === 'files' ? 'filesRun' : 'run').disabled = true;
+  confirmRun(body).then(ok => {
+    if (!ok) { setBusy(false); return; }
+    say(statusId, t('starting'), 'info');
+    $(resultId).hidden = true;
+    setBusy(true, kind);
     return post('/api/run', body).then(startPolling);
   }).catch(e => {
     setBusy(false);
-    $('run').disabled = false;
-    say('runStatus', t('run_refused', e.message), 'bad');
+    say(statusId, t('run_refused', e.message), 'bad');
   });
-});
-$('runCancel').addEventListener('click', () => post('/api/cancel').catch(() => {}));
+}
 
+// ---------- chosen files
+let chosen = [], filesOutEdited = false;
+function renderChosen() {
+  const tb = $('filesRows'); tb.textContent = '';
+  chosen.forEach((path, i) => {
+    const tr = document.createElement('tr');
+    cellText(tr, path, 'rel');
+    const td = document.createElement('td'); td.className = 'act';
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'small'; b.textContent = t('col_remove');
+    b.setAttribute('aria-label', t('col_remove') + ' ' + path);
+    b.addEventListener('click', () => { chosen.splice(i, 1); renderChosen(); });
+    td.appendChild(b); tr.appendChild(td); tb.appendChild(tr);
+  });
+  $('filesTable').hidden = !chosen.length;
+  const note = pdfNote(chosen);
+  say('filesNote', (chosen.length ? t('files_count', chosen.length) : t('files_none')) + (note ? '\n' + note : ''), note ? 'warn' : 'info');
+  if (!filesOutEdited && chosen.length && status) $('filesOut').value = joinPath(dirname(chosen[0]), status.out_suffix);
+  if (!jobRunning) $('filesRun').disabled = !chosen.length;
+}
+$('filesAdd').addEventListener('click', () => showBrowser($('filesAdd'), 'browserHomeFiles', {
+  mode: 'files', start: () => chosen.length ? dirname(chosen[chosen.length - 1]) : '',
+  onAdd: paths => { paths.forEach(p => { if (chosen.indexOf(p) < 0) chosen.push(p); }); renderChosen(); }
+}));
+$('filesClear').addEventListener('click', () => { chosen = []; filesOutEdited = false; $('filesOut').value = ''; renderChosen(); });
+$('filesOut').addEventListener('input', () => { filesOutEdited = true; });
+$('filesOutBrowse').addEventListener('click', () => showBrowser($('filesOutBrowse'), 'browserHomeFilesOut', {mode: 'dir', start: dirOf($('filesOut')), onPick: pickInto($('filesOut'))}));
+$('filesRun').addEventListener('click', () => {
+  if (!chosen.length) return;
+  startConversion(Object.assign({mode: 'files', files: chosen.slice(), out: $('filesOut').value}, optionsBody('f')),
+                  'files', 'filesStatus', 'filesResult');
+});
+
+// ---------- incremental tasks
+let tasks = [], editing = null;
+function loadTasks() {
+  return api('/api/tasks').then(d => { tasks = d.tasks; renderTasks(); })
+    .catch(e => say('tasksNote', t('load_failed', e.message), 'bad'));
+}
+function tickedTasks() {
+  return Array.prototype.slice.call(document.querySelectorAll('#taskRows input:checked')).map(c => c.dataset.name);
+}
+function renderTasks() {
+  const keep = tickedTasks();
+  const tb = $('taskRows'); tb.textContent = '';
+  tasks.forEach((task, i) => {
+    const tr = document.createElement('tr'); tr.dataset.name = task.name;
+    const c0 = document.createElement('td'), box = document.createElement('input');
+    box.type = 'checkbox'; box.id = 'task' + i; box.dataset.name = task.name; box.checked = keep.indexOf(task.name) >= 0;
+    box.addEventListener('change', updateTaskNote);
+    c0.appendChild(box); tr.appendChild(c0);
+    const c1 = document.createElement('td'); c1.className = 'rel';
+    const lab = document.createElement('label'); lab.htmlFor = box.id;
+    const strong = document.createElement('strong'); strong.textContent = task.name; lab.appendChild(strong);
+    c1.appendChild(lab);
+    [task.src, '→ ' + task.out].forEach(text => { const d = document.createElement('div'); d.className = 'hint mono'; d.textContent = text; c1.appendChild(d); });
+    if (!task.src_ok) { const d = document.createElement('div'); d.className = 'bad'; d.textContent = t('src_missing_short'); c1.appendChild(d); }
+    const c3 = document.createElement('div'); c3.className = 'actions'; c3.style.marginTop = '4px';
+    c1.appendChild(c3);
+    tr.appendChild(c1);
+    cellText(tr, task.last_run || t('never_run'));
+    [['t-edit', 'edit', () => openTaskForm(task)], ['t-del', 'del', () => deleteTask(task)]].forEach(x => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'small ' + x[0];
+      b.textContent = t(x[1]); b.setAttribute('aria-label', t(x[1]) + ' ' + task.name);
+      b.addEventListener('click', x[2]);
+      c3.appendChild(b);
+    });
+    tb.appendChild(tr);
+  });
+  updateTaskNote();
+}
+function updateTaskNote() {
+  say('tasksNote', tasks.length ? t('tasks_count', tasks.length, tickedTasks().length) : t('tasks_none'), tasks.length ? 'info' : 'warn');
+  const none = !tasks.length;
+  if (!jobRunning) { $('taskRun').disabled = $('taskPreview').disabled = $('taskRunAll').disabled = none; }
+}
+function openTaskForm(task) {
+  editing = task;
+  $('taskForm').hidden = false;
+  $('taskFormHead').textContent = task ? t('h_task_edit', task.name) : t('h_task_new');
+  $('taskName').value = task ? task.name : '';
+  $('taskSrc').value = task ? task.src : '';
+  $('taskOut').value = task ? task.out : '';
+  say('taskFormStatus', '');
+  $('taskName').focus();
+}
+function closeTaskForm() { editing = null; $('taskForm').hidden = true; closeBrowser(); $('taskNew').focus(); }
+$('taskNew').addEventListener('click', () => openTaskForm(null));
+$('taskBack').addEventListener('click', closeTaskForm);
+$('taskSrcBrowse').addEventListener('click', () => showBrowser($('taskSrcBrowse'), 'browserHomeTaskSrc', {mode: 'dir', start: dirOf($('taskSrc')), onPick: pickInto($('taskSrc'))}));
+$('taskOutBrowse').addEventListener('click', () => showBrowser($('taskOutBrowse'), 'browserHomeTaskOut', {mode: 'dir', start: dirOf($('taskOut')), onPick: pickInto($('taskOut'))}));
+$('taskSave').addEventListener('click', () => {
+  const body = {name: $('taskName').value, src: $('taskSrc').value, out: $('taskOut').value};
+  if (editing) {
+    body.action = 'edit'; body.old = editing.name;
+    const newOut = body.out.trim().replace(/\/+$/, '');
+    if (editing.last_run && newOut !== editing.out && !confirm(t('task_out_changed', editing.out, newOut, $('taskDays').value))) return;
+  } else {
+    body.action = 'add';
+  }
+  post('/api/tasks', body).then(() => {
+    closeTaskForm();
+    say('tasksStatus', t('task_saved'), 'ok');
+    return loadTasks();
+  }).catch(e => say('taskFormStatus', t('task_save_failed', e.message), 'bad'));
+});
+function deleteTask(task) {
+  if (!confirm(t('task_del_confirm', task.name))) return;
+  post('/api/tasks', {action: 'delete', name: task.name}).then(loadTasks)
+    .catch(e => say('tasksStatus', t('task_del_failed', e.message), 'bad'));
+}
+function runTasks(names, dry) {
+  if (!names.length) { say('tasksStatus', t('tasks_none_ticked'), 'warn'); return; }
+  $('tasksResult').hidden = true;
+  say('tasksStatus', t('starting'), 'info');
+  setBusy(true, 'tasks');
+  post('/api/tasks/run', {names: names, days: $('taskDays').value, dry_run: dry}).then(startPolling).catch(e => {
+    setBusy(false);
+    say('tasksStatus', t('run_refused', e.message), 'bad');
+  });
+}
+$('taskPreview').addEventListener('click', () => runTasks(tickedTasks(), true));
+$('taskRun').addEventListener('click', () => runTasks(tickedTasks(), false));
+$('taskRunAll').addEventListener('click', () => runTasks(tasks.map(x => x.name), false));
+
+function taskOutcome(r) {
+  if (r.rc === null) return [t('out_none'), 'bad'];
+  if (r.rc === 0) return r.dry_run ? [t('out_preview'), 'ok'] : [r.first_run ? t('out_ok_first', $('taskDays').value) : t('out_ok'), 'ok'];
+  if (r.rc === 1 || r.rc === 2 || r.rc === 3) return [t('out_' + r.rc), 'bad'];
+  return [t('out_other', r.rc), 'bad'];
+}
+function renderTasksResult(job) {
+  const rs = (job.result || {}).tasks || [];
+  $('tasksResult').hidden = false;
+  say('tasksStatus', '');
+  const failed = rs.filter(r => r.rc !== 0).length;
+  if (job.state === 'cancelled') say('tasksResultStatus', t('tasks_cancelled'), 'warn');
+  else if (failed) say('tasksResultStatus', t('tasks_some_failed', failed, rs.length), 'bad');
+  else say('tasksResultStatus', job.params.dry_run ? t('tasks_done_preview', rs.length) : t('tasks_done', rs.length), 'ok');
+  const tb = $('tasksResultRows'); tb.textContent = '';
+  const outs = $('tasksOutputs'); outs.textContent = '';
+  rs.forEach(r => {
+    const tr = document.createElement('tr');
+    cellText(tr, r.name, 'name');
+    const o = taskOutcome(r), td = document.createElement('td'); td.className = 'wrap';
+    const head = document.createElement('div'); head.className = o[1]; head.textContent = o[0]; td.appendChild(head);
+    if (r.last_line && !r.dry_run) { const d = document.createElement('div'); d.textContent = r.last_line; td.appendChild(d); }
+    const lg = document.createElement('div'); lg.className = 'hint mono'; lg.textContent = t('out_log', r.log); td.appendChild(lg);
+    tr.appendChild(td); tb.appendChild(tr);
+    const det = document.createElement('details'), sum = document.createElement('summary'), pre = document.createElement('pre');
+    sum.textContent = r.name + ' — ' + t('h_output_tail'); pre.textContent = r.output || '';
+    det.open = !!r.dry_run || o[1] === 'bad';
+    det.appendChild(sum); det.appendChild(pre); outs.appendChild(det);
+  });
+  loadTasks();
+}
+
+// ---------- duplicate clean-up
+let dryDone = null;   // the request whose dry run found something to remove
+function dedupBody(dry) {
+  return {target: $('dedupTarget').value.trim(), dry_run: dry, no_db: $('dedupNoDb').checked,
+          base: $('dedupBase').value.split('\n').map(x => x.trim()).filter(Boolean)};
+}
+function sameRequest(a, b) { return a && b && a.target === b.target && a.base.join('\n') === b.base.join('\n'); }
+['dedupTarget', 'dedupBase'].forEach(id => $(id).addEventListener('input', () => { dryDone = null; $('dedupClean').disabled = true; }));
+$('dedupBrowse').addEventListener('click', () => showBrowser($('dedupBrowse'), 'browserHomeDedup', {
+  mode: 'md', start: () => $('dedupTarget').value.trim() ? dirname($('dedupTarget').value.trim()) : '', onPick: pickInto($('dedupTarget'))}));
+function runDedup(dry) {
+  const body = dedupBody(dry);
+  if (!dry) {
+    if (!sameRequest(body, dryDone)) return;
+    if (!confirm(t('dedup_confirm', dryDone.duplicate, dryDone.sections, body.target))) return;
+  }
+  say('dedupStatus', t('dedup_running'), 'info');
+  $('dedupResult').hidden = true;
+  setBusy(true, 'dedup');
+  post('/api/dedup', body).then(startPolling).catch(e => {
+    setBusy(false);
+    say('dedupStatus', t('dedup_refused', e.message), 'bad');
+  });
+}
+$('dedupDry').addEventListener('click', () => runDedup(true));
+$('dedupClean').addEventListener('click', () => runDedup(false));
+function renderDedup(job) {
+  const r = job.result || {}, p = job.params;
+  $('dedupResult').hidden = false;
+  say('dedupStatus', '');
+  if (job.state === 'cancelled') say('dedupResultStatus', t('dedup_cancelled'), 'warn');
+  else if (job.rc !== 0) say('dedupResultStatus', t('dedup_failed', job.rc), 'bad');
+  else if (p.dry_run) say('dedupResultStatus', r.duplicate ? t('dedup_dry_result', r.duplicate, r.sections, r.kept) : t('dedup_nothing'), r.duplicate ? 'info' : 'ok');
+  else say('dedupResultStatus', r.backup ? t('dedup_done', r.duplicate, r.kept, r.backup) : t('dedup_done_none'), 'ok');
+  dryDone = job.rc === 0 && p.dry_run && r.duplicate ? {target: p.target, base: p.base, duplicate: r.duplicate, sections: r.sections} : null;
+  $('dedupClean').disabled = !dryDone;
+  $('dedupReportHead').hidden = $('dedupReport').hidden = !r.report;
+  $('dedupReport').textContent = r.report || '';
+  $('dedupOutputBox').hidden = !job.output;
+  $('dedupOutputBox').open = job.rc !== 0;
+  $('dedupOutput').textContent = job.output || '';
+}
+
+// ---------- one task at a time: busy state, cancel and polling
+const STARTERS = ['scan', 'run', 'filesRun', 'taskPreview', 'taskRun', 'taskRunAll', 'taskSave', 'dedupDry', 'dedupClean'];
+const BATCH_INPUTS = ['src', 'srcBrowse', 'useSince', 'since', 'out', 'outBrowse', 'all', 'none', 'exSkip', 'exRedo'];
+const CANCEL = {scan: 'scanCancel', run: 'runCancel', files: 'filesCancel', tasks: 'tasksCancel', dedup: 'dedupCancel'};
+const PROG = {scan: 'scanProg', run: 'runProg', files: 'filesProg', tasks: 'tasksProg', dedup: 'dedupProg'};
 function setBusy(on, kind) {
-  jobRunning = on;
-  ['scan', 'src', 'srcBrowse', 'useSince', 'since', 'out', 'outBrowse', 'all', 'none',
-   'optMerge', 'optInline', 'optImages', 'optKeepDups', 'exSkip', 'exRedo'].forEach(id => { $(id).disabled = on || !alive; });
-  document.querySelectorAll('#fileRows input').forEach(b => { b.disabled = on; });
-  $('scanCancel').hidden = !(on && kind === 'scan');
-  $('runCancel').hidden = !(on && kind === 'run');
-  $('scanProg').hidden = !(on && kind === 'scan');
-  $('runProg').hidden = !(on && kind === 'run');
-  if (on) { $('run').disabled = true; closeBrowser(); }
-  else if (scan) $('run').disabled = !tickedRels().length;
+  jobRunning = on; jobKind = on ? kind : null;
+  STARTERS.forEach(id => { $(id).disabled = on || !alive; });
+  BATCH_INPUTS.forEach(id => { $(id).disabled = (on && (kind === 'scan' || kind === 'run')) || !alive; });
+  document.querySelectorAll('#fileRows input, .opts input').forEach(b => { b.disabled = on || !alive; });
+  Object.keys(CANCEL).forEach(k => { $(CANCEL[k]).hidden = !(on && k === kind); });
+  Object.keys(PROG).forEach(k => { $(PROG[k]).hidden = !(on && k === kind); });
+  if (on) closeBrowser();
+  else {
+    if (scan) $('run').disabled = !tickedRels().length;
+    $('filesRun').disabled = !chosen.length;
+    $('dedupClean').disabled = !dryDone;
+    updateTaskNote();
+  }
   syncOptions();
 }
+document.querySelectorAll('button.cancel').forEach(b => b.addEventListener('click', () => post('/api/cancel').catch(() => {})));
 
-function renderProgress(job) {
-  if (job.kind === 'scan') return;
-  const p = $('runProg');
-  if (!job.total) { say('runStatus', t('preparing'), 'info'); p.removeAttribute('value'); return; }
-  p.value = Math.floor((job.cur - 1) * 100 / job.total);
-  say('runStatus', job.cur >= job.total ? t('progress_last', job.current) : t('progress', job.cur, job.total, job.current), 'info');
-}
-
-function renderRun(job) {
-  const r = job.result || {}, p = job.params, st = r.stats || {};
-  $('resultCard').hidden = false;
-  say('runStatus', '');
-  const lines = [];
-  let kind = 'ok';
-  if (job.state === 'cancelled') {
-    kind = 'warn';
-    if (p.merge) lines.push(t('cancel_merged') + (r.report ? t('cancel_merged_report') : ''));
-    else lines.push(t('cancel_single', r.written_md || 0) + (r.report ? t('cancel_single_report') : ''));
-  } else if (job.rc === 0) {
-    const failed = (r.failed || []).length;
-    if (failed) { kind = 'warn'; lines.push(t('done_failed', failed)); }
-    else lines.push(t('done_ok', st.new || 0));
-  } else if (job.rc === 10) {
-    kind = 'warn'; lines.push(t('done_nomatch'));
-  } else {
-    kind = 'bad'; lines.push(t('done_error', job.rc));
-  }
-  if ((r.skipped_pdf || []).length) { lines.push(t('pdf_skipped', r.skipped_pdf.length)); if (kind === 'ok') kind = 'warn'; }
-  say('resultStatus', lines.join('\n'), kind);
-  $('resultSummary').hidden = !(r.summary && r.summary.length);
-  $('resultSummary').textContent = (r.summary || []).join('\n');
-  $('reportHead').hidden = $('reportText').hidden = !r.report;
-  $('reportText').textContent = r.report || '';
-  $('outputBox').hidden = !job.output;
-  $('outputBox').open = kind === 'bad';
-  $('outputText').textContent = job.output || '';
-  $('open').hidden = !(status && status.tools['xdg-open']);
-  say('openStatus', '');
-  $('resultStatus').scrollIntoView({block: 'nearest'});
-}
-$('open').addEventListener('click', () => {
-  post('/api/open').then(() => say('openStatus', '')).catch(e => say('openStatus', t('open_failed', e.message), 'bad'));
-});
-
-// ---------- polling the task
 function startPolling() {
   if (!pollTimer) pollTimer = setInterval(poll, 700);
   poll();
@@ -642,13 +1155,21 @@ function poll() {
   api('/api/job').then(job => {
     if (job.state === 'running') {
       if (!jobRunning) setBusy(true, job.kind);
-      renderProgress(job);
+      if (job.kind === 'run') renderProgress($('runProg'), $('runStatus'), job);
+      else if (job.kind === 'files') renderProgress($('filesProg'), $('filesStatus'), job);
+      else if (job.kind === 'tasks' && job.total) {
+        $('tasksProg').value = Math.floor((job.cur - 1) * 100 / job.total);
+        say('tasksStatus', t('tasks_running', job.cur, job.total, job.current), 'info');
+      }
       return;
     }
     clearInterval(pollTimer); pollTimer = null;
     setBusy(false);
     if (job.kind === 'scan') renderScan(job);
-    else if (job.kind === 'run') renderRun(job);
+    else if (job.kind === 'run') { say('runStatus', ''); renderConversion($('batchResult'), job); }
+    else if (job.kind === 'files') { say('filesStatus', ''); renderConversion($('filesResult'), job); }
+    else if (job.kind === 'tasks') renderTasksResult(job);
+    else if (job.kind === 'dedup') renderDedup(job);
   }).catch(() => serviceGone());
 }
 
@@ -658,6 +1179,7 @@ $('quit').addEventListener('click', () => {
 });
 
 // ---------- start
+applyTexts();
 api('/api/status').then(s => {
   status = s;
   L = S[s.lang] || S.en;
@@ -666,6 +1188,7 @@ api('/api/status').then(s => {
   $('version').textContent = s.version ? t('version', s.version) : '';
   if (!$('src').value) $('src').value = s.home;
   syncOptions();
+  renderChosen();
   ping();
   if (s.job && s.job.state === 'running') { setBusy(true, s.job.kind); startPolling(); }
 }).catch(e => say('error', t('load_failed', e.message), 'bad'));

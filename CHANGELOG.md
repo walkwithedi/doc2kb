@@ -2,6 +2,13 @@
 
 Releases follow VERSION; merging a version change to main publishes v<version> (.github/workflows/release.yml).
 
+## 2.0.0
+
+- The browser interface covers everything the dialogs did: **Chosen files**, **Incremental tasks** (add, edit, delete, preview, run ticked or all; the first run's number of days is set on the page; task names stay unique; changing a task's output folder is confirmed because the watermark stays in the old folder) and **Duplicate clean-up** (dry run with its report, then a confirmed clean-up with a backup).
+- `doc2kb.sh` without arguments starts the browser interface. The zenity dialogs are removed and zenity is no longer needed. The command-line mode, its options and exit codes and the tasks file are unchanged.
+- Cancelling stops the running program and every program it started.
+- Values from requests are logged escaped.
+
 ## 1.2.0
 
 - Browser interface: `doc2kb_web.py` serves `doc2kb.html` on 127.0.0.1 with a one-time token, started by the desktop launcher `双击运行.desktop`. It offers folder batch: choose folders in a folder list, scan, untick files, choose options, follow the progress, cancel, and read the result and report. Pictures are off by default; the output folder defaults to `<source>/_doc2kb` (`_知识库` in Chinese). Only the current run's report is shown, a cancel states what was written, and files that cannot be processed are listed while the rest are converted. The dialogs and the command line are unchanged.

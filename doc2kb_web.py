@@ -35,12 +35,15 @@ from urllib.parse import parse_qs, urlsplit
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import doc2kb_core as core  # noqa: E402  constants and labels only; conversions run in a child
+import doc2kb_dedup as dedup  # noqa: E402  labels only; the clean-up runs in a child
 
 LOG_FORMAT = core.LOG_FORMAT
 log = logging.getLogger('doc2kb_web')
 
 PAGE_FILE = os.path.join(HERE, 'doc2kb.html')
 CORE = os.path.join(HERE, 'doc2kb_core.py')
+SHELL = os.path.join(HERE, 'doc2kb.sh')
+DEDUP = os.path.join(HERE, 'doc2kb_dedup.py')
 VERSION_FILE = os.path.join(HERE, 'VERSION')
 LOG_NAME = 'doc2kb_web.log'
 PING_TIMEOUT = 600      # seconds without a heartbeat before a page counts as closed (fallback only)
@@ -65,6 +68,16 @@ MESSAGES = {
     'src': ('The source folder', '源目录'),
     'folder': ('The folder', '目录'),
     'out': ('The output folder', '输出目录'),
+    'file': ('A file', '文件'),
+    'task_name': ('the task needs a name', '任务需要一个名字'),
+    'task_exists': ('a task named %s exists already', '已有名为「%s」的任务'),
+    'task_missing': ('no task named %s', '没有名为「%s」的任务'),
+    'no_task': ('no task chosen', '没有选中任务'),
+    'not_md': ('choose a merged or incremental md file: %s', '请选择合并或增量 md 文件：%s'),
+    'bad_days': ('the number of days must be a whole number from 1 to 36500',
+                 '天数须为 1 到 36500 的整数'),
+    'file_missing': ('file not found: %s', '文件不存在：%s'),
+    'file_unsupported': ('not a document doc2kb reads: %s', '不是 doc2kb 能处理的文档：%s'),
     'out_not_writable': ('cannot write to the output folder: %s', '输出目录不可写：%s'),
     'out_is_src': ('the output folder cannot be the source folder itself', '输出目录不能就是源目录本身'),
     'bad_date': ('the date must be YYYY-MM-DD', '日期格式应为 YYYY-MM-DD'),
@@ -85,6 +98,11 @@ MESSAGES = {
 }
 
 LANG = 'en'
+
+
+def log_safe(value):
+    """A request value for a log line: line breaks escaped, so it cannot start a line of its own."""
+    return str(value).replace('\r', '\\r').replace('\n', '\\n')
 
 
 def M(key, *args):
@@ -131,7 +149,9 @@ def existing_dir(value, label):
 
 
 def file_kind(name):
-    """'doc', 'archive', 'legacy' or None: what the converter makes of a file name."""
+    """'doc', 'archive', 'legacy', 'md' (output, for the clean-up) or None."""
+    if name.lower().endswith('.md'):
+        return 'md'
     kind = core.archive_kind(name)
     if kind in ('zip', 'tar'):
         return 'archive'
@@ -204,7 +224,8 @@ def has_tool(name):
 # ---------------------------------------------------------------- tasks
 
 class Job:
-    """The current or latest scan or conversion. One at a time."""
+    """The current or latest task: a scan, a conversion, a series of incremental tasks or a
+    clean-up. One at a time. A task is one or more steps, each a child process run in turn."""
 
     def __init__(self):
         self.lock = threading.Lock()
@@ -226,9 +247,13 @@ class Job:
         self.current = ''
         self.result = None
         self.tmpdir = None
+        self.steps = []
 
-    def start(self, kind, params, argv, tmpdir=None):
-        """tmpdir: a private folder of this task, removed when it ends."""
+    def start(self, kind, params, argv, tmpdir=None, steps=None):
+        """argv: the command of a one-step task. steps: instead of argv, a list of dicts with
+        'name' and 'argv' (None when the step cannot run; 'error' says why); each gets 'rc',
+        'first' (its first output line) and 'last'. tmpdir: a private folder of this task,
+        removed when it ends."""
         with self.lock:
             if self.running:
                 return False
@@ -237,30 +262,27 @@ class Job:
             self.running = True
             self.started = time.strftime('%Y-%m-%d %H:%M:%S')
             self.started_wall = time.time()
-        threading.Thread(target=self._run, args=(argv,), daemon=True).start()
+            self.steps = steps if steps is not None else [{'name': '', 'argv': argv}]
+        threading.Thread(target=self._run, daemon=True).start()
         return True
 
-    def _run(self, argv):
-        log.info('%s start: %s', self.kind, argv)
-        env = dict(os.environ, PYTHONIOENCODING='utf-8', DOC2KB_LANG=LANG)
+    def _run(self):
         rc = None
-        try:
-            proc = subprocess.Popen(argv, env=env, stdin=subprocess.DEVNULL,
-                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                    universal_newlines=True, encoding='utf-8', errors='replace')
+        for i, step in enumerate(self.steps, 1):
             with self.lock:
-                self.proc = proc
-                cancel_now = self.cancelled
-            if cancel_now:
-                self._interrupt(proc)
-            with proc.stdout:
-                for line in proc.stdout:
-                    self._line(line.rstrip('\n'))
-            rc = proc.wait()
-        except OSError as e:
-            log.error('cannot run the core: %s', e)
-            self._line(M('cannot_run', e))
-            rc = -1
+                if self.cancelled:
+                    break
+                step['first'] = len(self.lines)
+                if len(self.steps) > 1:
+                    self.cur, self.total, self.current = i, len(self.steps), step['name']
+            if step.get('argv'):
+                rc = self._run_step(step['argv'])
+            else:
+                self._line(step.get('error', ''))
+                rc = None
+            with self.lock:
+                step['rc'] = rc
+                step['last'] = len(self.lines)
         with self.lock:
             self.rc = rc
             self.proc = None
@@ -275,6 +297,32 @@ class Job:
                 shutil.rmtree(self.tmpdir, ignore_errors=True)
                 self.tmpdir = None
         log.info('%s finished rc=%s cancelled=%s', self.kind, rc, self.cancelled)
+
+    def _run_step(self, argv):
+        log.info('%s step: %s', self.kind, log_safe(argv))
+        env = dict(os.environ, PYTHONIOENCODING='utf-8', DOC2KB_LANG=LANG)
+        try:
+            # a session of its own, so a cancel reaches doc2kb.sh and the converter it starts
+            proc = subprocess.Popen(argv, env=env, stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    universal_newlines=True, encoding='utf-8', errors='replace',
+                                    start_new_session=True)
+        except OSError as e:
+            log.error('cannot run %s: %s', argv[0], e)
+            self._line(M('cannot_run', e))
+            return -1
+        with self.lock:
+            self.proc = proc
+            cancel_now = self.cancelled
+        if cancel_now:
+            self._interrupt(proc)
+        with proc.stdout:
+            for line in proc.stdout:
+                self._line(line.rstrip('\n'))
+        rc = proc.wait()
+        with self.lock:
+            self.proc = None
+        return rc
 
     def _line(self, line):
         with self.lock:
@@ -295,10 +343,11 @@ class Job:
 
     @staticmethod
     def _interrupt(proc):
-        """SIGINT first, so the core removes its private temporary folder; then stronger."""
+        """SIGINT first, so the core removes its private temporary folder; then stronger.
+        The signal goes to the step's whole process group."""
         for sig, wait in ((signal.SIGINT, CANCEL_WAIT), (signal.SIGTERM, 5), (signal.SIGKILL, 5)):
             try:
-                proc.send_signal(sig)
+                os.killpg(proc.pid, sig)
             except OSError:
                 return
             try:
@@ -312,7 +361,45 @@ class Job:
     def _result(self):
         if self.kind == 'scan':
             return self._scan_result()
+        if self.kind == 'tasks':
+            return self._tasks_result()
+        if self.kind == 'dedup':
+            return self._dedup_result()
         return self._run_result()
+
+    def _dedup_result(self):
+        found = {}
+        for line in self.lines:
+            for key, rx in DEDUP_LINES.items():
+                m = rx.match(line)
+                if m and key not in found:
+                    # one language's groups match, the other's are None
+                    found[key] = tuple(g for g in m.groups() if g is not None)
+        sections, duplicate, kept = (int(x) for x in found.get('summary', (0, 0, 0)))
+        report_path = found.get('report', (None,))[0]
+        report = None
+        if report_path and self.rc == 0:
+            try:
+                if os.path.getmtime(report_path) >= self.started_wall - 1:
+                    with open(report_path, encoding='utf-8', errors='replace') as f:
+                        report = f.read()
+            except OSError:
+                report = None
+        return {'sections': sections, 'duplicate': duplicate, 'kept': kept,
+                'report': report, 'report_path': report_path,
+                'backup': found.get('backup', (None,))[0], 'dry_run': self.params['dry_run']}
+
+    def _tasks_result(self):
+        out = []
+        for step in self.steps:
+            if 'rc' not in step:
+                continue    # not reached: cancelled before
+            lines = [l for l in self.lines[step['first']:step['last']] if l.strip()]
+            out.append({'name': step['name'], 'rc': step['rc'], 'first_run': step['first_run'],
+                        'dry_run': step['dry_run'], 'log': step['log'],
+                        'last_line': lines[-1] if lines else '',
+                        'output': '\n'.join(lines[-OUTPUT_TAIL:])})
+        return {'tasks': out}
 
     def _scan_result(self):
         ok, legacy, filtered = [], [], 0
@@ -348,9 +435,14 @@ class Job:
         report_path = os.path.join(out, core.T('report_file'))
         report = fresh_report(report_path, self.started_wall)
         written = written_md(out, self.started_wall) if not p['merge'] else 0
-        return {'stats': stats, 'failed': failed, 'summary': summary,
+        try:
+            failed_n = int(stats.get('failed', len(failed)))
+        except ValueError:
+            failed_n = len(failed)
+        return {'stats': stats, 'failed': failed, 'failed_n': failed_n, 'summary': summary,
                 'report': report, 'report_path': report_path if report is not None else None,
-                'written_md': written, 'skipped_pdf': p.get('skipped_pdf', [])}
+                'written_md': written, 'skipped_pdf': p.get('skipped_pdf', []),
+                'skipped_legacy': p.get('skipped_legacy', [])}
 
     def snapshot(self, tail=OUTPUT_TAIL):
         with self.lock:
@@ -394,7 +486,7 @@ def written_md(out, since_wall):
                 if os.path.getmtime(os.path.join(out, name)) >= since_wall - 1:
                     n += 1
             except OSError:
-                pass
+                pass  # removed meanwhile: not counted
     return n
 
 
@@ -405,35 +497,13 @@ def scan_argv(src, since):
     return argv
 
 
-def run_plan(data):
-    """Check a run request; returns (params, argv, only-list lines) or raises ValueError."""
-    src = existing_dir(data.get('src'), M('src'))
-    out = norm_path(data.get('out') or default_out(src), M('out'))
-    if out == src:
-        raise ValueError(M('out_is_src'))
-    if not writable_target(out):
-        raise ValueError(M('out_not_writable', out))
-    since = (data.get('since') or '').strip()
-    if since and not DATE_RE.match(since):
-        raise ValueError(M('bad_date'))
-    only = [r for r in (data.get('only') or []) if isinstance(r, str) and r.strip()]
-    skipped_pdf = []
-    if not has_tool('pdftotext'):
-        skipped_pdf = [r for r in only if r.lower().endswith('.pdf')]
-        only = [r for r in only if not r.lower().endswith('.pdf')]
-    if not only:
-        raise ValueError(M('no_files'))
-    merge = bool(data.get('merge'))
+def common_options(data, out, merge):
+    """The options both run kinds share: (params, core arguments)."""
     images = bool(data.get('images'))
     sheets = bool(data.get('sheets')) and images and has_tool('montage')
-    params = {'src': src, 'out': out, 'since': since, 'merge': merge,
-              'inline': bool(data.get('inline')), 'images': images,
-              'keep_dups': bool(data.get('keep_dups')), 'sheets': sheets,
-              'force': bool(data.get('force')) and not merge,
-              'count': len(only), 'skipped_pdf': skipped_pdf}
-    argv = [sys.executable, '-u', CORE, '--batch', src, '-o', out, '--lang', LANG]
-    if since:
-        argv += ['--since', since]
+    params = {'out': out, 'merge': merge, 'inline': bool(data.get('inline')), 'images': images,
+              'keep_dups': bool(data.get('keep_dups')), 'sheets': sheets}
+    argv = ['-o', out, '--lang', LANG]
     if merge:
         argv.append('--merge')
     if not params['inline']:
@@ -444,9 +514,77 @@ def run_plan(data):
         argv.append('--no-dedup')
     if sheets:
         argv.append('--sheets')
+    return params, argv
+
+
+def checked_out(data, default):
+    out = norm_path(data.get('out') or default, M('out'))
+    if not writable_target(out):
+        raise ValueError(M('out_not_writable', out))
+    return out
+
+
+def split_pdf(paths):
+    """(kept, PDF files left out because pdftotext is missing)."""
+    if has_tool('pdftotext'):
+        return paths, []
+    return ([p for p in paths if not p.lower().endswith('.pdf')],
+            [p for p in paths if p.lower().endswith('.pdf')])
+
+
+def run_plan(data):
+    """Check a run request. Returns (params, argv, list lines, list option) or raises ValueError;
+    the list lines go to a file passed with the list option."""
+    if data.get('mode') == 'files':
+        return files_plan(data)
+    src = existing_dir(data.get('src'), M('src'))
+    out = checked_out(data, default_out(src))
+    if out == src:
+        raise ValueError(M('out_is_src'))
+    since = (data.get('since') or '').strip()
+    if since and not DATE_RE.match(since):
+        raise ValueError(M('bad_date'))
+    only = [r for r in (data.get('only') or []) if isinstance(r, str) and r.strip()]
+    only, skipped_pdf = split_pdf(only)
+    if not only:
+        raise ValueError(M('no_files'))
+    merge = bool(data.get('merge'))
+    params, opts = common_options(data, out, merge)
+    params.update({'kind': 'run', 'src': src, 'since': since,
+                   'force': bool(data.get('force')) and not merge,
+                   'count': len(only), 'skipped_pdf': skipped_pdf, 'skipped_legacy': []})
+    argv = [sys.executable, '-u', CORE, '--batch', src] + opts
+    if since:
+        argv += ['--since', since]
     if params['force']:
         argv.append('--force')
-    return params, argv, only
+    return params, argv, only, '--only'
+
+
+def files_plan(data):
+    """Chosen files: absolute paths of documents or archives; legacy formats are left out."""
+    files, legacy = [], []
+    for f in data.get('files') or []:
+        path = norm_path(f if isinstance(f, str) else '', M('file'))
+        if not os.path.isfile(path):
+            raise ValueError(M('file_missing', path))
+        kind = file_kind(os.path.basename(path))
+        if kind == 'legacy':
+            legacy.append(path)
+        elif kind in ('doc', 'archive'):
+            files.append(path)
+        else:
+            raise ValueError(M('file_unsupported', path))
+    files, skipped_pdf = split_pdf(files)
+    if not files:
+        raise ValueError(M('no_files'))
+    src = os.path.dirname(files[0])
+    merge = bool(data.get('merge'))
+    out = checked_out(data, default_out(src))
+    params, opts = common_options(data, out, merge)
+    params.update({'kind': 'files', 'src': src, 'since': '', 'force': False, 'files': files,
+                   'count': len(files), 'skipped_pdf': skipped_pdf, 'skipped_legacy': legacy})
+    return params, [sys.executable, '-u', CORE] + opts, files, '--files'
 
 
 def run_check(params):
@@ -457,13 +595,173 @@ def run_check(params):
         name = core.safe_name(os.path.basename(params['src'])) + '.md'
         if os.path.isfile(os.path.join(out, name)):
             replace.append(name)
+    elif params['kind'] == 'files':
+        # chosen files always write their md again; archives are named after their members
+        plain = [{'rel': os.path.basename(p), 'path': p} for p in params['files']
+                 if file_kind(os.path.basename(p)) == 'doc']
+        replace = sorted(b + '.md' for b in core.base_names(plain)
+                         if os.path.isfile(os.path.join(out, b + '.md')))
     elif params['force']:
         try:
             existing = sum(1 for n in os.listdir(out) if n.endswith('.md') and not n.startswith('_'))
         except OSError:
             existing = 0
-    return {'replace': replace, 'existing_md': existing, 'out': out,
-            'count': params['count'], 'skipped_pdf': params['skipped_pdf']}
+    return {'replace': replace, 'existing_md': existing, 'out': out, 'count': params['count'],
+            'skipped_pdf': params['skipped_pdf'], 'skipped_legacy': params['skipped_legacy']}
+
+
+# ---------------------------------------------------------------- clean-up of duplicate text
+
+def label_re(text):
+    """A doc2kb_dedup.py output label as a pattern: %d and %s become groups."""
+    parts = re.split(r'(%d|%s)', text)
+    return ''.join('(\\d+)' if p == '%d' else '(.+)' if p == '%s' else re.escape(p) for p in parts)
+
+
+# the dedup tool's summary lines, in either language
+DEDUP_LINES = {key: re.compile('^(?:%s)$' % '|'.join(label_re(t) for t in dedup.LABELS[key]))
+               for key in ('summary', 'report', 'backup')}
+
+
+def dedup_plan(data):
+    """Check a clean-up request; returns (params, argv) or raises ValueError."""
+    target = norm_path(data.get('target'), M('file'))
+    if not os.path.isfile(target):
+        raise ValueError(M('file_missing', target))
+    if not target.lower().endswith('.md'):
+        raise ValueError(M('not_md', target))
+    bases = []
+    for b in data.get('base') or []:
+        path = norm_path(b, M('file'))
+        if not os.path.exists(path):
+            raise ValueError(M('file_missing', path))
+        bases.append(path)
+    params = {'target': target, 'base': bases, 'dry_run': bool(data.get('dry_run')),
+              'no_db': bool(data.get('no_db'))}
+    argv = [sys.executable, '-u', DEDUP, target, '--log-level', 'WARNING']
+    for b in bases:
+        argv += ['-b', b]
+    if params['dry_run']:
+        argv.append('-n')
+    if params['no_db']:
+        argv.append('-N')
+    return params, argv
+
+
+# ---------------------------------------------------------------- incremental tasks
+
+def tasks_conf():
+    """The tasks file, shared with earlier versions: one task per line, name<TAB>source<TAB>output."""
+    return os.path.join(os.path.expanduser('~'), '.config', 'doc2kb', 'watch_tasks.conf')
+
+
+def read_tasks():
+    tasks = []
+    try:
+        with open(tasks_conf(), encoding='utf-8', errors='replace') as f:
+            for line in f:
+                parts = line.rstrip('\n').split('\t')
+                if len(parts) >= 3 and parts[0]:
+                    tasks.append({'name': parts[0], 'src': parts[1], 'out': parts[2]})
+    except OSError:
+        pass    # no file yet: no tasks
+    return tasks
+
+
+def write_tasks(tasks):
+    path = tasks_conf()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as f:
+        for t in tasks:
+            f.write('%s\t%s\t%s\n' % (t['name'], t['src'], t['out']))
+    os.replace(tmp, path)
+
+
+def last_run(out):
+    """When doc2kb.sh last finished a run into this output folder, or None (no watermark yet)."""
+    try:
+        with open(os.path.join(out, '.doc2kb_watch_state'), encoding='utf-8') as f:
+            for line in f:
+                if line.startswith('last_run='):
+                    return line.strip().split('=', 1)[1] or None
+    except OSError:
+        pass    # no state file: never run
+    return None
+
+
+def task_fields(data):
+    name = re.sub(r'[\t\r\n]', '', str(data.get('name') or '')).strip()
+    if not name:
+        raise ValueError(M('task_name'))
+    src = existing_dir(data.get('src'), M('src'))
+    out = norm_path(data.get('out'), M('out'))
+    if out == src:
+        raise ValueError(M('out_is_src'))
+    if not writable_target(out):
+        raise ValueError(M('out_not_writable', out))
+    return {'name': name, 'src': src, 'out': out}
+
+
+def change_tasks(data):
+    """Add, edit or delete a task; raises ValueError with the reason."""
+    tasks = read_tasks()
+    names = [t['name'] for t in tasks]
+    action = data.get('action')
+    if action == 'add':
+        t = task_fields(data)
+        if t['name'] in names:
+            raise ValueError(M('task_exists', t['name']))
+        tasks.append(t)
+    elif action == 'edit':
+        old = data.get('old')
+        if old not in names:
+            raise ValueError(M('task_missing', old))
+        t = task_fields(data)
+        if t['name'] != old and t['name'] in names:
+            raise ValueError(M('task_exists', t['name']))
+        tasks[names.index(old)] = t
+    elif action == 'delete':
+        if data.get('name') not in names:
+            raise ValueError(M('task_missing', data.get('name')))
+        del tasks[names.index(data.get('name'))]
+    else:
+        raise ValueError(M('not_found'))
+    write_tasks(tasks)
+
+
+def task_steps(data):
+    """The steps of a tasks run: doc2kb.sh -s SOURCE -o OUTPUT, with -d DAYS before the first run
+    and -n for a preview."""
+    try:
+        days = int(data.get('days') or 30)
+    except (TypeError, ValueError):
+        days = 0
+    if not 1 <= days <= 36500:
+        raise ValueError(M('bad_days'))
+    dry = bool(data.get('dry_run'))
+    by_name = {t['name']: t for t in read_tasks()}
+    wanted = [n for n in (data.get('names') or []) if n in by_name]
+    if not wanted:
+        raise ValueError(M('no_task'))
+    steps = []
+    for name in wanted:
+        t = by_name[name]
+        first = last_run(t['out']) is None
+        step = {'name': name, 'first_run': first, 'dry_run': dry,
+                'log': os.path.join(t['out'], '_watch.log')}
+        if not os.path.isdir(t['src']):
+            step['argv'] = None
+            step['error'] = M('path_missing', M('src'), t['src'])
+        else:
+            argv = ['bash', SHELL, '-s', t['src'], '-o', t['out']]
+            if first:
+                argv += ['-d', str(days)]
+            if dry:
+                argv.append('-n')
+            step['argv'] = argv
+        steps.append(step)
+    return steps
 
 
 # ---------------------------------------------------------------- web service
@@ -508,7 +806,7 @@ class WebState:
         with self.lock:
             for page, t in list(self.pages.items()):
                 if now - t > PING_TIMEOUT:
-                    log.info('page %s heartbeat lost', page)
+                    log.info('page %s heartbeat lost', log_safe(page))
                     del self.pages[page]
                     if not self.pages:
                         self.empty_since = now - BYE_GRACE
@@ -544,7 +842,7 @@ class Handler(BaseHTTPRequestHandler):
     state = None
 
     def log_message(self, fmt, *args):
-        log.debug('%s - %s', self.address_string(), fmt % args)
+        log.debug('%s - %s', self.address_string(), log_safe(fmt % args))
 
     def send_json(self, code, obj):
         body = json.dumps(obj, ensure_ascii=False).encode('utf-8', 'replace')
@@ -568,7 +866,7 @@ class Handler(BaseHTTPRequestHandler):
                 token = self.headers.get('X-Token', '')
             ok = isinstance(token, str) and hmac.compare_digest(token, st.token)
         if not ok:
-            log.warning('rejected %s %s', self.command, urlsplit(self.path).path)
+            log.warning('rejected %s %s', self.command, log_safe(urlsplit(self.path).path))
             self.send_json(403, {'error': M('denied')})
         return ok
 
@@ -611,6 +909,7 @@ class Handler(BaseHTTPRequestHandler):
         elif url.path == '/api/status':
             self.send_json(200, {
                 'lang': LANG, 'version': read_version(), 'home': os.path.expanduser('~'),
+                'out_suffix': core.T('out_dir_suffix'),
                 'roots': roots(), 'core': os.path.isfile(CORE),
                 'tools': {'pdftotext': has_tool('pdftotext'), 'montage': has_tool('montage'),
                           'xdg-open': has_tool('xdg-open')},
@@ -627,6 +926,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(400, {'error': str(e)})
         elif url.path == '/api/job':
             self.send_json(200, self.state.job.snapshot())
+        elif url.path == '/api/tasks':
+            self.send_json(200, {'conf': tasks_conf(), 'tasks': [
+                dict(t, last_run=last_run(t['out']), src_ok=os.path.isdir(t['src']))
+                for t in read_tasks()]})
         else:
             self.send_json(404, {'error': M('not_found')})
 
@@ -637,7 +940,7 @@ class Handler(BaseHTTPRequestHandler):
             data = self.read_json()
             if not self.allowed(True, data.get('t')):
                 return
-            log.info('page %s closed', data.get('page'))
+            log.info('page %s closed', log_safe(data.get('page')))
             self.state.bye(str(data.get('page')))
             self.send_json(200, {'ok': True})
             return
@@ -671,7 +974,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(200, {'ok': True})
         elif url.path in ('/api/check', '/api/run'):
             try:
-                params, argv, only = run_plan(data)
+                params, argv, lines, list_opt = run_plan(data)
             except ValueError as e:
                 self.send_json(400, {'error': str(e)})
                 return
@@ -685,12 +988,40 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(409, {'error': M('busy')})
                 return
             tmp = tempfile.mkdtemp(prefix='doc2kb_web_')
-            only_file = os.path.join(tmp, 'only.txt')
-            with open(only_file, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(only) + '\n')
-            argv += ['--only', only_file]
-            if not job.start('run', params, argv, tmpdir=tmp):
+            list_file = os.path.join(tmp, 'list.txt')
+            with open(list_file, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(lines) + '\n')
+            argv += [list_opt, list_file]
+            if not job.start(params['kind'], params, argv, tmpdir=tmp):
                 shutil.rmtree(tmp, ignore_errors=True)
+                self.send_json(409, {'error': M('busy')})
+                return
+            self.send_json(200, {'ok': True})
+        elif url.path == '/api/tasks':
+            try:
+                change_tasks(data)
+            except ValueError as e:
+                self.send_json(400, {'error': str(e)})
+                return
+            self.send_json(200, {'ok': True})
+        elif url.path == '/api/tasks/run':
+            try:
+                steps = task_steps(data)
+            except ValueError as e:
+                self.send_json(400, {'error': str(e)})
+                return
+            params = {'names': [st['name'] for st in steps], 'dry_run': bool(data.get('dry_run'))}
+            if not job.start('tasks', params, None, steps=steps):
+                self.send_json(409, {'error': M('busy')})
+                return
+            self.send_json(200, {'ok': True})
+        elif url.path == '/api/dedup':
+            try:
+                params, argv = dedup_plan(data)
+            except ValueError as e:
+                self.send_json(400, {'error': str(e)})
+                return
+            if not job.start('dedup', params, argv):
                 self.send_json(409, {'error': M('busy')})
                 return
             self.send_json(200, {'ok': True})
@@ -702,7 +1033,7 @@ class Handler(BaseHTTPRequestHandler):
         elif url.path == '/api/open':
             # only the output folder of the latest run
             with job.lock:
-                out = job.params.get('out') if job.kind == 'run' and job.params else None
+                out = job.params.get('out') if job.kind in ('run', 'files') and job.params else None
             if not out or not os.path.isdir(out):
                 self.send_json(400, {'error': M('path_missing', M('out'), out or '')})
                 return
@@ -752,7 +1083,7 @@ def serve(open_browser=True):
     try:
         server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:
-        pass
+        pass  # Ctrl+C in a terminal: stop like "Quit"
     finally:
         server.server_close()
         st.job.cancel()
