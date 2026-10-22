@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Documents to knowledge base
+Name[zh_CN]=文档转知识库
+Comment=Turn Office, PDF and mail files into Markdown for a knowledge base
+Comment[zh_CN]=把办公文档、PDF 和邮件转成知识库用的 Markdown
+Exec=sh -c "p=\\$(dirname \\"\\$(readlink -f \\"\\$1\\")\\")/doc2kb_web.py; [ -f \\"\\$p\\" ] && exec python3 \\"\\$p\\"; m=\\"\\$p not found. Put a link to this launcher elsewhere instead of a copy. / 找不到 \\$p。请把「双击运行」以链接方式放到别处，不要复制。\\"; zenity --error --no-markup --text=\\"\\$m\\" 2>/dev/null || notify-send \\"\\$m\\" 2>/dev/null || { mkdir -p \\"\\$HOME/.cache/doc2kb\\" && echo \\"\\$m\\" >> \\"\\$HOME/.cache/doc2kb/launcher.log\\"; }" sh %k
+Terminal=false
+Icon=utilities-terminal
+Categories=Utility;Office;

@@ -2,6 +2,10 @@
 
 Releases follow VERSION; merging a version change to main publishes v<version> (.github/workflows/release.yml).
 
+## 1.2.0
+
+- Browser interface: `doc2kb_web.py` serves `doc2kb.html` on 127.0.0.1 with a one-time token, started by the desktop launcher `双击运行.desktop`. It offers folder batch: choose folders in a folder list, scan, untick files, choose options, follow the progress, cancel, and read the result and report. Pictures are off by default; the output folder defaults to `<source>/_doc2kb` (`_知识库` in Chinese). Only the current run's report is shown, a cancel states what was written, and files that cannot be processed are listed while the rest are converted. The dialogs and the command line are unchanged.
+
 ## 1.1.0
 
 - Library use: `build_parser()` returns every command-line option, and `run_batch()` / `run_files()` take an optional `writer` that replaces the merged or per-document output while the date filter, duplicate handling, fingerprint file, archives and report run as usual. SPEC.md, section 5.6, describes the interface. The command line is unchanged.

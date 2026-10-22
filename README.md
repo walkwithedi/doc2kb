@@ -6,7 +6,7 @@
 - **Keeps what matters.** Headings, tables, embedded workbooks and the position of every picture survive the conversion.
 - **Files things once.** Identical copies, including ones inside zip and tar archives, are parsed once. Moved or renamed folders don't produce duplicates.
 - **Set it and forget it.** An incremental mode for cron converts only what changed since the last run.
-- **Two ways to use it.** Run it from a desktop dialog or the command line, or import `doc2kb_core.py` as a library.
+- **Several ways to use it.** Run it in the browser (double-click the launcher), from a desktop dialog or the command line, or import `doc2kb_core.py` as a library.
 
 Supports `.docx` `.xlsx` `.xlsm` `.pptx` `.pdf` `.eml`, plus archives. Messages and output labels can be English or Chinese.
 
@@ -18,6 +18,8 @@ Supports `.docx` `.xlsx` `.xlsm` `.pptx` `.pdf` `.eml`, plus archives. Messages 
 | --- | --- |
 | `doc2kb_core.py` | the converter: parsing, extraction, picture export and output. Command line with options for everything, no interface code. |
 | `doc2kb.sh` | entry script: without arguments a dialog (folder batch, chosen files, incremental tasks); with arguments the incremental command-line mode for cron |
+| `doc2kb_web.py`, `doc2kb.html` | browser interface: a local web service (127.0.0.1 only) and its page; folder batch so far |
+| `双击运行.desktop` | desktop launcher for the browser interface |
 | `doc2kb_dedup.py` | removes sections from a merged or incremental file whose text is already in other output files, after a folder was moved or renamed |
 | `SPEC.md` | the behaviour contract: inputs, outputs and edge cases, for rebuilding or understanding the design |
 
@@ -27,6 +29,7 @@ Supports `.docx` `.xlsx` `.xlsm` `.pptx` `.pdf` `.eml`, plus archives. Messages 
 - Optional, each feature is skipped with a message when missing:
   - `pdftotext`, `pdfimages`, `pdfinfo` (poppler-utils): PDF
   - `zenity`: the dialogs only; the command-line mode does not need it
+  - a web browser: the browser interface only
   - `montage` (ImageMagick): contact sheets only
 - Run `doc2kb.sh` with bash, not sh.
 
@@ -37,6 +40,17 @@ Get it from [Releases](../../releases) (`doc2kb-<version>.zip`) or clone this re
 Messages and the labels written into the output (headings, notes, table headers) are English or Chinese. `doc2kb.sh` follows `DOC2KB_LANG` (en or zh), else the locale: a `zh` locale gives Chinese. `doc2kb_core.py` takes `--lang en|zh` (default `DOC2KB_LANG`, else en). Chinese labels and file names stay fixed between versions, so existing output folders and fingerprint files keep working.
 
 ## Usage
+
+### Browser
+
+Double-click `双击运行.desktop` (or run `python3 doc2kb_web.py`). The page opens in the browser:
+
+1. Choose the source folder (type the path or use "Browse…"), optionally a date, and press "Scan".
+2. Untick the files you do not want. Legacy formats are listed and skipped.
+3. Check the output folder (default `<source>/_doc2kb`, `_知识库` in Chinese) and the options, then "Start".
+4. The result shows the summary and the report; "Open output folder" opens it.
+
+Pictures are not exported unless "Export images" is ticked. The service listens on 127.0.0.1 only, with a one-time token in the address, and exits a few seconds after the last page is closed; "Quit" stops it at once. A run in progress is finished first. Paths are chosen in a folder list the service provides, not with the browser's file picker, because conversions need the real paths. To keep the launcher on the desktop, put a link to it there, not a copy. The service logs to `doc2kb_web.log` next to it (or `~/.cache/doc2kb/` when that folder is read-only).
 
 ### Dialogs
 

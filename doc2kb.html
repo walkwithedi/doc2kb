@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>doc2kb</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1f2328; --muted:#656d76; --line:#d0d7de; --accent:#0969da; --ok:#1a7f37; --warn:#9a6700; --bad:#cf222e; --focus:#0969da; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0d1117; --card:#161b22; --text:#e6edf3; --muted:#8d96a0; --line:#30363d; --accent:#4493f8; --ok:#3fb950; --warn:#d29922; --bad:#f85149; --focus:#4493f8; }
+  }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.6 "Noto Sans CJK SC","WenQuanYi Micro Hei","PingFang SC","Microsoft YaHei",sans-serif; }
+  main { max-width:960px; margin:0 auto; padding:20px 16px 40px; }
+  header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  h1 { font-size:22px; margin:0; }
+  h2 { font-size:17px; margin:0 0 10px; }
+  .sub, .hint { color:var(--muted); }
+  .sub { margin:4px 0 12px; }
+  .hint { font-size:13px; margin:6px 0 0; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin:12px 0; }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .row > input[type=text] { flex:1 1 220px; min-width:0; }
+  label.field { display:block; color:var(--muted); margin:8px 0 4px; }
+  input[type=text], input[type=date], select { padding:7px 10px; font:inherit; font-size:14px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--text); max-width:100%; }
+  .check { display:flex; gap:8px; align-items:flex-start; margin:6px 0; }
+  .check input { margin-top:5px; flex:none; }
+  .check span small { display:block; color:var(--muted); font-size:13px; }
+  .actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+  button { padding:7px 14px; font:inherit; font-size:14px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--text); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button:disabled { opacity:.5; cursor:default; }
+  button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
+  [role=tablist] { display:flex; flex-wrap:wrap; gap:4px; border-bottom:1px solid var(--line); margin:8px 0 0; }
+  [role=tab] { border:1px solid transparent; border-bottom:none; border-radius:6px 6px 0 0; background:none; color:var(--muted); margin-bottom:-1px; }
+  [role=tab][aria-selected=true] { background:var(--card); border-color:var(--line); color:var(--text); font-weight:bold; }
+  .status { margin:8px 0 0; min-height:1.6em; white-space:pre-wrap; }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); } .info { color:var(--accent); }
+  pre, .mono { font:13px/1.5 "Noto Sans Mono CJK SC","DejaVu Sans Mono",monospace; }
+  pre { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:8px 10px; margin:8px 0 0; max-height:360px; overflow:auto; white-space:pre-wrap; word-break:break-all; }
+  .scroll { overflow-x:auto; max-height:420px; overflow-y:auto; border:1px solid var(--line); border-radius:6px; margin-top:8px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:4px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:normal; position:sticky; top:0; background:var(--card); }
+  td.rel { word-break:break-all; min-width:12em; }
+  td.num { text-align:right; white-space:nowrap; }
+  .browser { border:1px solid var(--line); border-radius:6px; padding:8px; margin-top:8px; background:var(--bg); }
+  .browser .here { word-break:break-all; margin:6px 0; }
+  .browser ul { list-style:none; margin:6px 0; padding:0; max-height:260px; overflow:auto; }
+  .browser li button { width:100%; text-align:left; border:none; background:none; padding:4px 6px; word-break:break-all; }
+  .browser li button:hover { background:var(--card); }
+  progress { width:100%; height:14px; margin-top:8px; }
+  footer { color:var(--muted); font-size:13px; margin-top:24px; border-top:1px solid var(--line); padding-top:10px; }
+  #closed { background:var(--card); border:1px solid var(--bad); color:var(--bad); border-radius:8px; padding:12px; margin-top:12px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1 data-t="title"></h1>
+    <button id="quit" type="button" data-t="quit"></button>
+  </header>
+  <p class="sub" data-t="sub"></p>
+  <div id="closed" hidden></div>
+  <p id="error" class="status bad" aria-live="polite"></p>
+
+  <div role="tablist" id="tabs" data-t-label="tabs">
+    <button role="tab" id="tab-batch" aria-controls="panel-batch" aria-selected="true" data-t="tab_batch"></button>
+  </div>
+
+  <section role="tabpanel" id="panel-batch" aria-labelledby="tab-batch" tabindex="0">
+    <div class="card">
+      <h2 data-t="h_source"></h2>
+      <label class="field" for="src" data-t="src_label"></label>
+      <div class="row">
+        <input id="src" type="text" autocomplete="off" spellcheck="false">
+        <button id="srcBrowse" type="button" aria-expanded="false" data-t="browse"></button>
+      </div>
+      <div id="browserHomeSrc"></div>
+      <div class="check">
+        <input id="useSince" type="checkbox">
+        <label for="useSince"><span data-t="since_label"></span></label>
+      </div>
+      <div class="row" id="sinceRow" hidden>
+        <input id="since" type="date" data-t-label="since_label">
+        <span class="hint" data-t="since_hint"></span>
+      </div>
+      <div class="actions">
+        <button id="scan" class="primary" type="button" data-t="scan"></button>
+        <button id="scanCancel" type="button" data-t="cancel" hidden></button>
+      </div>
+      <progress id="scanProg" hidden></progress>
+      <p id="scanStatus" class="status" aria-live="polite"></p>
+    </div>
+
+    <div class="card" id="listCard" hidden>
+      <h2 data-t="h_files"></h2>
+      <p id="listSummary"></p>
+      <div class="actions">
+        <button id="all" type="button" data-t="tick_all"></button>
+        <button id="none" type="button" data-t="tick_none"></button>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th scope="col"><span data-t="col_take"></span></th><th scope="col" data-t="col_rel"></th><th scope="col" class="num" data-t="col_size"></th></tr></thead>
+          <tbody id="fileRows"></tbody>
+        </table>
+      </div>
+      <p id="listNote" class="status" aria-live="polite"></p>
+      <details id="legacyBox" hidden>
+        <summary id="legacySummary"></summary>
+        <pre id="legacyList"></pre>
+      </details>
+    </div>
+
+    <div class="card" id="runCard" hidden>
+      <h2 data-t="h_output"></h2>
+      <label class="field" for="out" data-t="out_label"></label>
+      <div class="row">
+        <input id="out" type="text" autocomplete="off" spellcheck="false">
+        <button id="outBrowse" type="button" aria-expanded="false" data-t="browse"></button>
+      </div>
+      <div id="browserHomeOut"></div>
+      <h2 style="margin-top:14px" data-t="h_options"></h2>
+      <div class="check"><input id="optMerge" type="checkbox" checked><label for="optMerge"><span><span data-t="opt_merge"></span><small data-t="opt_merge_d"></small></span></label></div>
+      <div class="check"><input id="optInline" type="checkbox" checked><label for="optInline"><span><span data-t="opt_inline"></span><small data-t="opt_inline_d"></small></span></label></div>
+      <div class="check"><input id="optImages" type="checkbox"><label for="optImages"><span><span data-t="opt_images"></span><small data-t="opt_images_d"></small></span></label></div>
+      <div class="check"><input id="optSheets" type="checkbox" disabled><label for="optSheets"><span><span data-t="opt_sheets"></span><small id="sheetsHint"></small></span></label></div>
+      <div class="check"><input id="optKeepDups" type="checkbox"><label for="optKeepDups"><span><span data-t="opt_dups"></span><small data-t="opt_dups_d"></small></span></label></div>
+      <fieldset id="existingBox" hidden style="border:1px solid var(--line); border-radius:6px; margin:8px 0 0">
+        <legend data-t="existing_legend"></legend>
+        <div class="check"><input id="exSkip" name="existing" type="radio" checked><label for="exSkip" data-t="existing_skip"></label></div>
+        <div class="check"><input id="exRedo" name="existing" type="radio"><label for="exRedo" data-t="existing_redo"></label></div>
+      </fieldset>
+      <div class="actions">
+        <button id="run" class="primary" type="button" data-t="run"></button>
+        <button id="runCancel" type="button" data-t="cancel" hidden></button>
+      </div>
+      <progress id="runProg" max="100" value="0" hidden></progress>
+      <p id="runStatus" class="status" aria-live="polite"></p>
+    </div>
+
+    <div class="card" id="resultCard" hidden>
+      <h2 data-t="h_result"></h2>
+      <p id="resultStatus" class="status" aria-live="polite"></p>
+      <pre id="resultSummary" hidden></pre>
+      <div class="actions">
+        <button id="open" type="button" data-t="open_out"></button>
+      </div>
+      <p id="openStatus" class="status" aria-live="polite"></p>
+      <h2 id="reportHead" style="margin-top:10px" data-t="h_report" hidden></h2>
+      <pre id="reportText" hidden></pre>
+      <details id="outputBox" hidden>
+        <summary data-t="h_output_tail"></summary>
+        <pre id="outputText"></pre>
+      </details>
+    </div>
+  </section>
+
+  <footer><span id="footRule" data-t="foot_rule"></span> <span id="version"></span></footer>
+</main>
+
+<template id="browserTpl">
+  <div class="browser">
+    <div class="row">
+      <label class="hint b-rootlabel"></label>
+      <select class="b-roots"></select>
+      <button type="button" class="b-up"></button>
+    </div>
+    <div class="here mono"></div>
+    <p class="hint b-count"></p>
+    <ul class="b-dirs"></ul>
+    <p class="status b-status" aria-live="polite"></p>
+    <div class="actions">
+      <button type="button" class="primary b-pick"></button>
+      <button type="button" class="b-close"></button>
+    </div>
+  </div>
+</template>
+
+<script>
+'use strict';
+const TOKEN = new URLSearchParams(location.search).get('t') || '';
+const PAGE = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const $ = id => document.getElementById(id);
+
+const S = {
+  en: {
+    title: 'Documents to knowledge base', quit: 'Quit',
+    sub: 'Turns Word, Excel, PowerPoint, PDF and mail files into Markdown for a knowledge base. The conversion is done by doc2kb_core.py in this folder.',
+    tabs: 'Modes', tab_batch: 'Folder batch',
+    h_source: '1. Source folder', src_label: 'Folder with the documents (absolute path or ~/…)',
+    browse: 'Browse…', since_label: 'Only documents changed on or after a date',
+    since_hint: 'The document\'s own time is used when it has one, else the file system time.',
+    scan: 'Scan', cancel: 'Cancel',
+    scanning: 'Scanning the folder… Archives take a while.',
+    scan_failed: 'Scan failed: {0}. Check the folder and scan again.',
+    scan_cancelled: 'Scan cancelled.',
+    scan_none: 'No document to process in this folder.',
+    scan_none_filtered: 'No document to process: {0} files are older than the date.',
+    scan_done: 'Found {0} documents.',
+    h_files: '2. Files to process',
+    list_summary: '{0} documents found; untick the ones you do not want.',
+    list_filtered: ' {0} files older than the date are left out.',
+    tick_all: 'Tick all', tick_none: 'Untick all',
+    col_take: 'Take', col_rel: 'Relative path', col_size: 'Size',
+    ticked: '{0} of {1} ticked.',
+    pdf_lossy: 'Ticked PDF files: PDF loses embedded workbooks, vector graphics and heading levels. Use the original docx or pptx when you have it.',
+    pdf_missing: '{0} ticked PDF files will be skipped: pdftotext (poppler-utils) is not installed. Install it and run again to include them.',
+    legacy_summary: '{0} legacy-format files are skipped (.doc / .xls / .ppt / .msg)',
+    legacy_hint: 'Save them as .docx / .xlsx / .pptx in an office application and scan again.',
+    h_output: '3. Output', out_label: 'Output folder (created when missing)',
+    h_options: 'Options',
+    opt_merge: 'Merge', opt_merge_d: 'Index and all text in one md; untick for one md per document.',
+    opt_inline: 'Expand embedded Excel', opt_inline_d: 'Workbooks embedded in docx become tables in the text.',
+    opt_images: 'Export images', opt_images_d: 'Writes picture files; without it the text keeps the image anchors and runs faster.',
+    opt_sheets: 'Contact sheets', opt_sheets_d: 'Tiles exported pictures 4×4 into numbered sheets.',
+    sheets_need_images: 'Tiles exported pictures 4×4 into numbered sheets. Needs "Export images".',
+    sheets_no_tool: 'Needs ImageMagick (montage), which is not installed.',
+    opt_dups: 'Keep every copy', opt_dups_d: 'By default files with the same bytes or text are kept once, the newest.',
+    existing_legend: 'Documents already converted in the output folder',
+    existing_skip: 'Skip them and reuse the existing results', existing_redo: 'Convert everything again',
+    run: 'Start', starting: 'Starting…',
+    progress: 'Document {0} of {1}: {2}',
+    progress_last: 'Last document ({0}), then the report and index are written…',
+    preparing: 'Preparing…',
+    confirm_replace: 'The output folder {0} already holds:\n{1}\n\nIt will be replaced. Start?',
+    confirm_redo: 'All {0} md files already in {1} will be replaced by new conversions. Start?',
+    run_refused: 'Cannot start: {0}. Correct it and start again.',
+    h_result: 'Result',
+    done_ok: 'Done: {0} documents converted.',
+    done_failed: 'Done, but {0} documents failed. The report\'s "Failed" section gives the reasons.',
+    done_nomatch: 'Nothing was converted: no ticked file matched. Scan again.',
+    done_error: 'Conversion failed: the converter exited with code {0}. The output below shows why; correct it and start again.',
+    pdf_skipped: '{0} PDF files were not processed: pdftotext (poppler-utils) is missing.',
+    cancel_merged: 'Cancelled. The merged md was not written; it is written only at the end.',
+    cancel_merged_report: ' The report lists the documents finished before the cancel.',
+    cancel_single: 'Cancelled. {0} md files were written before the cancel; with "Skip them" the next run reuses them.',
+    cancel_single_report: ' The report lists them.',
+    open_out: 'Open output folder', open_failed: 'Opening failed: {0}. Open the folder yourself.',
+    h_report: 'Report (summary)', h_output_tail: 'Converter output',
+    foot_rule: 'Closing this page stops the service; "Quit" stops it at once. A running task is finished first.',
+    version: 'Version {0}',
+    closed: 'The service has stopped; you can close this page. Start it again with the launcher.',
+    closed_wait: 'The service stops when the current task ends; you can close this page.',
+    quit_running: 'A task is running. The service stops when it ends.\n\nQuit?',
+    b_roots: 'Start at', b_up: 'Up one level', b_pick: 'Use this folder', b_close: 'Close',
+    b_count: '{0} documents or archives directly in this folder.', b_empty: 'No sub-folders.',
+    b_failed: 'Opening the folder failed: {0}.',
+    load_failed: 'Loading failed: {0}. Reload the page; if that fails, start the tool again.'
+  },
+  zh: {
+    title: '文档转知识库', quit: '退出',
+    sub: '把 Word、Excel、PowerPoint、PDF 和邮件转成供知识库使用的 Markdown，转换由同目录的 doc2kb_core.py 完成。',
+    tabs: '模式', tab_batch: '目录批量',
+    h_source: '1. 源目录', src_label: '文档所在目录（绝对路径或 ~/ 开头）',
+    browse: '浏览……', since_label: '只处理某个日期（含当天）之后修改的文档',
+    since_hint: '时间优先取文档内部属性，取不到时用文件系统时间。',
+    scan: '扫描', cancel: '取消',
+    scanning: '正在扫描目录……压缩包较多时需要一些时间。',
+    scan_failed: '扫描失败：{0}。请检查目录后重新扫描。',
+    scan_cancelled: '已取消扫描。',
+    scan_none: '该目录下没有可处理的文档。',
+    scan_none_filtered: '没有可处理的文档：有 {0} 个文件早于所选日期。',
+    scan_done: '共找到 {0} 个文档。',
+    h_files: '2. 要处理的文件',
+    list_summary: '共找到 {0} 个文档，取消勾选可排除不想处理的文件。',
+    list_filtered: '另有 {0} 个文件早于所选日期，已排除。',
+    tick_all: '全部勾选', tick_none: '全部取消',
+    col_take: '处理', col_rel: '相对路径', col_size: '大小',
+    ticked: '已勾选 {0} / {1} 个。',
+    pdf_lossy: '勾选了 PDF：PDF 已丢失嵌入的 Excel 附件、矢量图和标题层级，能拿到原始 docx、pptx 时建议改用原始文件。',
+    pdf_missing: '勾选的 {0} 个 PDF 将被跳过：未安装 pdftotext（poppler-utils）。安装后重新运行即可纳入。',
+    legacy_summary: '{0} 个旧版格式文件将被跳过（.doc / .xls / .ppt / .msg）',
+    legacy_hint: '请用办公软件另存为 .docx / .xlsx / .pptx 后重新扫描。',
+    h_output: '3. 输出', out_label: '输出目录（不存在时自动创建）',
+    h_options: '选项',
+    opt_merge: '合并输出', opt_merge_d: '索引与全部正文写进一个 md；取消则每份文档一个 md。',
+    opt_inline: '展开内嵌 Excel', opt_inline_d: '把 docx 里嵌入的 Excel 附件展开成正文表格。',
+    opt_images: '导出图片', opt_images_d: '写出图片文件；不勾选时正文仍保留图片锚点，处理更快。',
+    opt_sheets: '合并拼图', opt_sheets_d: '把导出的图片按 4×4 拼成带编号的大图。',
+    sheets_need_images: '把导出的图片按 4×4 拼成带编号的大图，需先勾选「导出图片」。',
+    sheets_no_tool: '需要 ImageMagick（montage 命令），本机未安装。',
+    opt_dups: '保留全部副本', opt_dups_d: '默认字节或正文相同的文件只保留一份（文档时间最新的）。',
+    existing_legend: '输出目录中已转换过的文档',
+    existing_skip: '跳过，沿用已有结果', existing_redo: '全部重新转换',
+    run: '开始', starting: '正在启动……',
+    progress: '第 {0}/{1} 份：{2}',
+    progress_last: '最后一份（{0}），随后写汇总与索引……',
+    preparing: '准备中……',
+    confirm_replace: '输出目录 {0} 中已有：\n{1}\n\n将被替换。确定开始？',
+    confirm_redo: '{1} 中已有的 {0} 个 md 文件将被重新转换的结果替换。确定开始？',
+    run_refused: '无法开始：{0}。修正后重新开始。',
+    h_result: '结果',
+    done_ok: '完成：转换 {0} 份文档。',
+    done_failed: '完成，但有 {0} 份失败，原因见报告的「失败」一节。',
+    done_nomatch: '没有转换任何文件：勾选的文件都不符合条件。请重新扫描。',
+    done_error: '转换失败：转换器退出码 {0}。原因见下方输出，修正后重新开始。',
+    pdf_skipped: '{0} 个 PDF 未处理：缺少 pdftotext（poppler-utils）。',
+    cancel_merged: '已取消。合并 md 只在最后写出，本次没有写出。',
+    cancel_merged_report: '报告记录了取消前处理完的文档。',
+    cancel_single: '已取消。取消前已写出 {0} 个 md；下次选「跳过，沿用已有结果」会沿用它们。',
+    cancel_single_report: '报告记录了这些文档。',
+    open_out: '打开输出目录', open_failed: '打开失败：{0}。请手动打开该目录。',
+    h_report: '报告（摘要）', h_output_tail: '转换器输出',
+    foot_rule: '关闭本页后服务自动退出；点「退出」立即结束。有任务运行时，等任务结束再退出。',
+    version: '版本 {0}',
+    closed: '服务已退出，可关闭本页。需要再用时重新双击「双击运行」。',
+    closed_wait: '服务将在当前任务结束后退出，可关闭本页。',
+    quit_running: '有任务正在运行，服务会等它结束后再退出。\n\n确定退出？',
+    b_roots: '从这里开始', b_up: '上一级', b_pick: '选这个目录', b_close: '收起',
+    b_count: '本目录下直接有 {0} 个文档或压缩包。', b_empty: '没有子目录。',
+    b_failed: '打开目录失败：{0}。',
+    load_failed: '读取失败：{0}。请刷新页面；仍不行时重新启动工具。'
+  }
+};
+let L = S.en;
+function t(key) {
+  const args = Array.prototype.slice.call(arguments, 1);
+  return (L[key] || key).replace(/\{(\d)\}/g, (m, i) => String(args[+i]));
+}
+function applyTexts() {
+  document.querySelectorAll('[data-t]').forEach(el => { el.textContent = t(el.dataset.t); });
+  document.querySelectorAll('[data-t-label]').forEach(el => { el.setAttribute('aria-label', t(el.dataset.tLabel)); });
+  document.title = t('title');
+}
+applyTexts();
+
+let alive = true, status = null, pollTimer = null, jobRunning = false, scan = null, outEdited = false;
+
+function api(path, opts) {
+  opts = opts || {};
+  opts.headers = Object.assign({'X-Token': TOKEN}, opts.headers || {});
+  return fetch(path, opts).then(r => r.json().then(j => {
+    if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+    return j;
+  }));
+}
+function post(path, body) {
+  return api(path, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {})});
+}
+function say(el, text, kind) {
+  el = typeof el === 'string' ? $(el) : el;
+  el.textContent = text || '';
+  el.className = 'status' + (kind ? ' ' + kind : '');
+}
+
+function serviceGone(msg) {
+  if (!alive) return;
+  alive = false;
+  $('closed').textContent = msg || t('closed');
+  $('closed').hidden = false;
+  document.querySelectorAll('button, input, select').forEach(el => { el.disabled = true; });
+  if (pollTimer) clearInterval(pollTimer);
+}
+
+// ---------- heartbeat and closing
+function ping() { post('/api/ping', {page: PAGE}).catch(() => serviceGone()); }
+setInterval(() => { if (alive) ping(); }, 10000);
+document.addEventListener('visibilitychange', () => { if (alive && !document.hidden) ping(); });
+window.addEventListener('pageshow', ev => { if (alive && ev.persisted) ping(); });
+// on close or reload; sendBeacon cannot set headers, so the token goes in the body
+window.addEventListener('pagehide', () => {
+  if (!alive || !navigator.sendBeacon) return;
+  navigator.sendBeacon('/api/bye', new Blob([JSON.stringify({t: TOKEN, page: PAGE})], {type: 'text/plain'}));
+});
+
+// ---------- tabs: arrow keys, Home and End move between them
+const tabs = Array.prototype.slice.call(document.querySelectorAll('[role=tab]'));
+function selectTab(tab) {
+  tabs.forEach(x => {
+    const on = x === tab;
+    x.setAttribute('aria-selected', on ? 'true' : 'false');
+    x.tabIndex = on ? 0 : -1;
+    $(x.getAttribute('aria-controls')).hidden = !on;
+  });
+  tab.focus();
+}
+tabs.forEach((tab, i) => {
+  tab.tabIndex = i === 0 ? 0 : -1;
+  tab.addEventListener('click', () => selectTab(tab));
+  tab.addEventListener('keydown', ev => {
+    let j = null;
+    if (ev.key === 'ArrowRight') j = (i + 1) % tabs.length;
+    else if (ev.key === 'ArrowLeft') j = (i - 1 + tabs.length) % tabs.length;
+    else if (ev.key === 'Home') j = 0;
+    else if (ev.key === 'End') j = tabs.length - 1;
+    if (j !== null) { ev.preventDefault(); selectTab(tabs[j]); }
+  });
+});
+
+// ---------- folder browser (the service lists folders: a browser cannot hand out real paths)
+let openBrowser = null;
+function closeBrowser() {
+  if (!openBrowser) return;
+  openBrowser.box.remove();
+  openBrowser.button.setAttribute('aria-expanded', 'false');
+  openBrowser.button.focus();
+  openBrowser = null;
+}
+function joinPath(dir, name) { return dir === '/' ? '/' + name : dir + '/' + name; }
+function showBrowser(input, button, home) {
+  if (openBrowser && openBrowser.input === input) { closeBrowser(); return; }
+  closeBrowser();
+  const box = $('browserTpl').content.firstElementChild.cloneNode(true);
+  $(home).appendChild(box);
+  button.setAttribute('aria-expanded', 'true');
+  const q = c => box.querySelector(c);
+  q('.b-rootlabel').textContent = t('b_roots');
+  q('.b-up').textContent = t('b_up');
+  q('.b-pick').textContent = t('b_pick');
+  q('.b-close').textContent = t('b_close');
+  const roots = q('.b-roots');
+  roots.setAttribute('aria-label', t('b_roots'));
+  (status ? status.roots : ['/']).forEach(r => {
+    const o = document.createElement('option'); o.value = r; o.textContent = r; roots.appendChild(o);
+  });
+  const st = {box: box, input: input, button: button, path: null, parent: null};
+  openBrowser = st;
+  function load(path) {
+    return api('/api/ls?path=' + encodeURIComponent(path)).then(d => {
+      st.path = d.path; st.parent = d.parent;
+      q('.here').textContent = d.path;
+      q('.b-up').disabled = !d.parent;
+      const docs = d.files.filter(f => f.kind !== 'legacy').length;
+      q('.b-count').textContent = t('b_count', docs);
+      const ul = q('.b-dirs'); ul.textContent = '';
+      if (!d.dirs.length) {
+        const li = document.createElement('li'); li.className = 'hint'; li.textContent = t('b_empty'); ul.appendChild(li);
+      }
+      d.dirs.forEach(name => {
+        const li = document.createElement('li'), b = document.createElement('button');
+        b.type = 'button'; b.textContent = '📁 ' + name;
+        b.addEventListener('click', () => load(joinPath(d.path, name)).then(() => { const f = q('.b-dirs button'); if (f) f.focus(); }));
+        li.appendChild(b); ul.appendChild(li);
+      });
+      say(q('.b-status'), '');
+    }).catch(e => say(q('.b-status'), t('b_failed', e.message), 'bad'));
+  }
+  roots.addEventListener('change', () => load(roots.value));
+  q('.b-up').addEventListener('click', () => { if (st.parent) load(st.parent); });
+  q('.b-pick').addEventListener('click', () => {
+    if (!st.path) return;
+    input.value = st.path;
+    input.dispatchEvent(new Event('input'));
+    closeBrowser();
+  });
+  q('.b-close').addEventListener('click', closeBrowser);
+  box.addEventListener('keydown', ev => { if (ev.key === 'Escape') { ev.preventDefault(); closeBrowser(); } });
+  load(input.value.trim() || (status && status.home) || '/').then(() => roots.focus(), () => roots.focus());
+}
+$('srcBrowse').addEventListener('click', () => showBrowser($('src'), $('srcBrowse'), 'browserHomeSrc'));
+$('outBrowse').addEventListener('click', () => showBrowser($('out'), $('outBrowse'), 'browserHomeOut'));
+
+// ---------- step 1: source and scan
+function threeMonthsAgo() {
+  const d = new Date(); d.setMonth(d.getMonth() - 3);
+  const p = n => (n < 10 ? '0' : '') + n;
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+$('since').value = threeMonthsAgo();
+$('useSince').addEventListener('change', () => { $('sinceRow').hidden = !$('useSince').checked; });
+$('src').addEventListener('input', () => {
+  scan = null;
+  $('listCard').hidden = true; $('runCard').hidden = true; $('resultCard').hidden = true;
+  say('scanStatus', '');
+});
+$('out').addEventListener('input', () => { outEdited = true; });
+
+$('scan').addEventListener('click', () => {
+  const body = {src: $('src').value, since: $('useSince').checked ? $('since').value : ''};
+  say('scanStatus', t('scanning'), 'info');
+  setBusy(true, 'scan');
+  post('/api/scan', body).then(startPolling).catch(e => {
+    setBusy(false);
+    say('scanStatus', t('scan_failed', e.message), 'bad');
+  });
+});
+$('scanCancel').addEventListener('click', () => post('/api/cancel').catch(() => {}));
+
+function renderScan(job) {
+  const r = job.result || {};
+  if (job.state === 'cancelled') { say('scanStatus', t('scan_cancelled'), 'warn'); return; }
+  if (job.rc !== 0 || !r.files) {
+    const last = (job.output || '').trim().split('\n').pop() || ('exit ' + job.rc);
+    say('scanStatus', t('scan_failed', last), 'bad');
+    return;
+  }
+  scan = {src: job.params.src, since: job.params.since, files: r.files};
+  if (!r.files.length) {
+    say('scanStatus', r.filtered ? t('scan_none_filtered', r.filtered) : t('scan_none'), 'warn');
+  } else {
+    say('scanStatus', t('scan_done', r.files.length), 'ok');
+  }
+  const tb = $('fileRows'); tb.textContent = '';
+  r.files.forEach((f, i) => {
+    const tr = document.createElement('tr');
+    const c0 = document.createElement('td'), box = document.createElement('input');
+    box.type = 'checkbox'; box.checked = true; box.id = 'f' + i; box.dataset.rel = f.rel;
+    box.setAttribute('aria-label', f.rel);
+    box.addEventListener('change', updateTicked);
+    c0.appendChild(box);
+    const c1 = document.createElement('td'); c1.className = 'rel';
+    const lab = document.createElement('label'); lab.htmlFor = box.id; lab.textContent = f.rel; c1.appendChild(lab);
+    const c2 = document.createElement('td'); c2.className = 'num'; c2.textContent = f.size;
+    tr.appendChild(c0); tr.appendChild(c1); tr.appendChild(c2); tb.appendChild(tr);
+  });
+  $('listSummary').textContent = t('list_summary', r.files.length) + (r.filtered ? t('list_filtered', r.filtered) : '');
+  $('legacyBox').hidden = !r.legacy.length;
+  if (r.legacy.length) {
+    $('legacySummary').textContent = t('legacy_summary', r.legacy.length);
+    $('legacyList').textContent = r.legacy.join('\n') + '\n\n' + t('legacy_hint');
+  }
+  $('listCard').hidden = !r.files.length;
+  $('runCard').hidden = !r.files.length;
+  if (!outEdited || !$('out').value.trim()) { $('out').value = r.out_default; outEdited = false; }
+  updateTicked();
+}
+
+function tickedRels() {
+  return Array.prototype.slice.call(document.querySelectorAll('#fileRows input:checked')).map(b => b.dataset.rel);
+}
+function updateTicked() {
+  const rels = tickedRels(), total = scan ? scan.files.length : 0;
+  const pdfs = rels.filter(r => /\.pdf$/i.test(r)).length;
+  let text = t('ticked', rels.length, total), kind = 'info';
+  if (pdfs) {
+    text += '\n' + (status && !status.tools.pdftotext ? t('pdf_missing', pdfs) : t('pdf_lossy'));
+    kind = 'warn';
+  }
+  say('listNote', text, kind);
+  if (!jobRunning) $('run').disabled = !rels.length;
+}
+$('all').addEventListener('click', () => { document.querySelectorAll('#fileRows input').forEach(b => { b.checked = true; }); updateTicked(); });
+$('none').addEventListener('click', () => { document.querySelectorAll('#fileRows input').forEach(b => { b.checked = false; }); updateTicked(); });
+
+// ---------- step 3: options and run
+function syncOptions() {
+  const montage = status && status.tools.montage;
+  const sheets = $('optSheets');
+  sheets.disabled = !montage || !$('optImages').checked || jobRunning;
+  if (sheets.disabled) sheets.checked = false;
+  $('sheetsHint').textContent = !montage ? t('sheets_no_tool') : ($('optImages').checked ? t('opt_sheets_d') : t('sheets_need_images'));
+  $('existingBox').hidden = $('optMerge').checked;
+}
+['optMerge', 'optImages'].forEach(id => $(id).addEventListener('change', syncOptions));
+
+function runBody() {
+  return {
+    src: scan.src, since: scan.since, out: $('out').value, only: tickedRels(),
+    merge: $('optMerge').checked, inline: $('optInline').checked, images: $('optImages').checked,
+    sheets: $('optSheets').checked, keep_dups: $('optKeepDups').checked,
+    force: !$('optMerge').checked && $('exRedo').checked
+  };
+}
+$('run').addEventListener('click', () => {
+  if (!scan) return;
+  const body = runBody();
+  $('run').disabled = true;
+  post('/api/check', body).then(c => {
+    let ok = true;
+    if (c.replace.length) ok = confirm(t('confirm_replace', c.out, c.replace.join('\n')));
+    else if (body.force && c.existing_md) ok = confirm(t('confirm_redo', c.existing_md, c.out));
+    if (!ok) { $('run').disabled = false; return; }
+    say('runStatus', t('starting'), 'info');
+    $('resultCard').hidden = true;
+    setBusy(true, 'run');
+    return post('/api/run', body).then(startPolling);
+  }).catch(e => {
+    setBusy(false);
+    $('run').disabled = false;
+    say('runStatus', t('run_refused', e.message), 'bad');
+  });
+});
+$('runCancel').addEventListener('click', () => post('/api/cancel').catch(() => {}));
+
+function setBusy(on, kind) {
+  jobRunning = on;
+  ['scan', 'src', 'srcBrowse', 'useSince', 'since', 'out', 'outBrowse', 'all', 'none',
+   'optMerge', 'optInline', 'optImages', 'optKeepDups', 'exSkip', 'exRedo'].forEach(id => { $(id).disabled = on || !alive; });
+  document.querySelectorAll('#fileRows input').forEach(b => { b.disabled = on; });
+  $('scanCancel').hidden = !(on && kind === 'scan');
+  $('runCancel').hidden = !(on && kind === 'run');
+  $('scanProg').hidden = !(on && kind === 'scan');
+  $('runProg').hidden = !(on && kind === 'run');
+  if (on) { $('run').disabled = true; closeBrowser(); }
+  else if (scan) $('run').disabled = !tickedRels().length;
+  syncOptions();
+}
+
+function renderProgress(job) {
+  if (job.kind === 'scan') return;
+  const p = $('runProg');
+  if (!job.total) { say('runStatus', t('preparing'), 'info'); p.removeAttribute('value'); return; }
+  p.value = Math.floor((job.cur - 1) * 100 / job.total);
+  say('runStatus', job.cur >= job.total ? t('progress_last', job.current) : t('progress', job.cur, job.total, job.current), 'info');
+}
+
+function renderRun(job) {
+  const r = job.result || {}, p = job.params, st = r.stats || {};
+  $('resultCard').hidden = false;
+  say('runStatus', '');
+  const lines = [];
+  let kind = 'ok';
+  if (job.state === 'cancelled') {
+    kind = 'warn';
+    if (p.merge) lines.push(t('cancel_merged') + (r.report ? t('cancel_merged_report') : ''));
+    else lines.push(t('cancel_single', r.written_md || 0) + (r.report ? t('cancel_single_report') : ''));
+  } else if (job.rc === 0) {
+    const failed = (r.failed || []).length;
+    if (failed) { kind = 'warn'; lines.push(t('done_failed', failed)); }
+    else lines.push(t('done_ok', st.new || 0));
+  } else if (job.rc === 10) {
+    kind = 'warn'; lines.push(t('done_nomatch'));
+  } else {
+    kind = 'bad'; lines.push(t('done_error', job.rc));
+  }
+  if ((r.skipped_pdf || []).length) { lines.push(t('pdf_skipped', r.skipped_pdf.length)); if (kind === 'ok') kind = 'warn'; }
+  say('resultStatus', lines.join('\n'), kind);
+  $('resultSummary').hidden = !(r.summary && r.summary.length);
+  $('resultSummary').textContent = (r.summary || []).join('\n');
+  $('reportHead').hidden = $('reportText').hidden = !r.report;
+  $('reportText').textContent = r.report || '';
+  $('outputBox').hidden = !job.output;
+  $('outputBox').open = kind === 'bad';
+  $('outputText').textContent = job.output || '';
+  $('open').hidden = !(status && status.tools['xdg-open']);
+  say('openStatus', '');
+  $('resultStatus').scrollIntoView({block: 'nearest'});
+}
+$('open').addEventListener('click', () => {
+  post('/api/open').then(() => say('openStatus', '')).catch(e => say('openStatus', t('open_failed', e.message), 'bad'));
+});
+
+// ---------- polling the task
+function startPolling() {
+  if (!pollTimer) pollTimer = setInterval(poll, 700);
+  poll();
+}
+function poll() {
+  api('/api/job').then(job => {
+    if (job.state === 'running') {
+      if (!jobRunning) setBusy(true, job.kind);
+      renderProgress(job);
+      return;
+    }
+    clearInterval(pollTimer); pollTimer = null;
+    setBusy(false);
+    if (job.kind === 'scan') renderScan(job);
+    else if (job.kind === 'run') renderRun(job);
+  }).catch(() => serviceGone());
+}
+
+$('quit').addEventListener('click', () => {
+  if (jobRunning && !confirm(t('quit_running'))) return;
+  post('/api/quit').then(r => serviceGone(r.waiting ? t('closed_wait') : t('closed'))).catch(() => serviceGone());
+});
+
+// ---------- start
+api('/api/status').then(s => {
+  status = s;
+  L = S[s.lang] || S.en;
+  document.documentElement.lang = s.lang === 'zh' ? 'zh-CN' : 'en';
+  applyTexts();
+  $('version').textContent = s.version ? t('version', s.version) : '';
+  if (!$('src').value) $('src').value = s.home;
+  syncOptions();
+  ping();
+  if (s.job && s.job.state === 'running') { setBusy(true, s.job.kind); startPolling(); }
+}).catch(e => say('error', t('load_failed', e.message), 'bad'));
+</script>
+</body>
+</html>
