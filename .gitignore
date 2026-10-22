@@ -5,3 +5,4 @@ dist/
 # a private-terms list belongs in ~/.config/doc2kb/, never here
 sensitive_terms.txt
 *.zip
+doc2kb_web.log

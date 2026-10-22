@@ -21,7 +21,7 @@ assistant can search and answer from.
 | No dependencies | Nothing beyond the language's standard library: no document converters, no office suite on the command line, no third-party parsing libraries | Office formats are parsed from their zip packages and XML directly |
 | Plain-text output | The output is read by an AI assistant | Markdown, no HTML; pictures are separate files |
 | Non-ASCII everywhere | File names, folder names and content are often Chinese; paths contain spaces and brackets | Every step must handle non-ASCII text and special characters |
-| Linux desktop | Any desktop with zenity | The dialog mode uses what such a desktop has (zenity); the command-line mode needs only bash and Python |
+| Linux desktop | Any desktop with a web browser | The browser interface is a local web service from the standard library; the dialog mode uses zenity; the command-line mode needs only bash and Python |
 
 > The dependency rule is the strongest one. If the environment happens to have better tools, the
 > implementation may use them (poppler-utils for PDF, ImageMagick for contact sheets), but it must not
@@ -47,6 +47,8 @@ Two deliverables, with separate responsibilities:
 2. **Entry script**: two ways to run
    - without arguments -> dialogs (everyday manual use)
    - with arguments -> command line without any interface (scheduled runs)
+3. **Browser interface**: a local web service and a page for everyday manual use (see 6.1a). It runs
+   the parsing engine as a child process with command-line options and holds no conversion logic.
 
 > Why: scheduled jobs have no display and a minimal environment; an interface dependency makes them fail.
 > Both entry points share one engine so the logic never forks.
@@ -430,6 +432,37 @@ handle: damaged, encrypted, wrong format, parse error.
 entries **still appear in the index and report**; otherwise after an incremental run the summary files hold
 only the few new documents, the history vanishes and the user thinks the knowledge base shrank.
 
+### 6.1a Browser interface
+
+`doc2kb_web.py` serves `doc2kb.html`; the desktop launcher `双击运行.desktop` starts it. It offers
+**Folder batch** so far: choose the source folder -> optional date filter -> scan -> **confirm or untick
+the file list** -> output folder -> options -> run -> result.
+
+- **Service**: listens on a random port of 127.0.0.1 only. The address carries a one-time token; every
+  API call must send it, and the Host and Origin headers must name this server. Closing the page tells
+  the service (sendBeacon); it exits a few seconds after the last page closed. A heartbeat timeout is
+  only a fallback and is long enough for a page left in the background. A running task is finished
+  before the service exits. Without a browser or without the page file the user is told through zenity
+  or notify-send.
+- **Paths** are chosen in a folder list the service provides (or typed): conversions need the real
+  paths, which a browser file picker does not give.
+- **One task at a time**, run as `doc2kb_core.py` with the same options as the command line. Progress
+  comes from its `[i/n]` lines; the result from its exit code, STAT and FAILED lines and the report.
+- **Defaults**: output folder `<source>/_doc2kb` (`_知识库` in Chinese), merge on, embedded workbooks
+  expanded, **pictures not exported**, duplicates kept once.
+- **Only this run counts**: a report older than the run is never shown as its result; a converter that
+  fails shows its exit code and output.
+- **Files that cannot be processed do not stop the rest**: legacy formats are listed and left out; PDF
+  files are left out and listed when pdftotext is missing.
+- **Confirmation** names what would be replaced: an existing merged file, or the number of md files a
+  "convert everything again" run replaces.
+- **Cancel** interrupts the converter (SIGINT first, so its temporary folder is removed) and states what
+  is left: in merged mode no merged file (the report lists the documents finished before); in
+  per-document mode the md files written so far, which a later run that skips existing output reuses.
+- **Page**: English or Chinese like the rest of the tool; works with the keyboard; status lines are
+  announced to screen readers; light and dark colour schemes; no horizontal scrolling at 360 px; text
+  from files is written as text, never as markup; nothing is loaded from the network.
+
 ### 6.2 Command-line mode
 
 Arguments mean command-line mode, with no dependency on a desktop. It must work in a scheduler's minimal
@@ -630,6 +663,8 @@ missing, what to install, or which alternative to use) instead of failing halfwa
 23. Non-ASCII paths and paths with spaces and brackets work throughout
 23a. **GBK-encoded Chinese file names**: scanning, parsing, writing and printing never crash; output and
      reports show the correct names, not question marks; such a file does not affect the rest of the batch
+23b. Browser interface: requests without the token or with another Host or Origin are refused; the
+     service listens on 127.0.0.1 only and exits after the last page closes, never during a run
 24. Large batches (dozens of documents, several folder levels, many identical names) are handled correctly;
     outputs with the same name do not overwrite each other
 
