@@ -21,7 +21,7 @@ log = logging.getLogger("check_repo")
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s.%(funcName)s:%(lineno)d - %(message)s"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOL_SCRIPTS = ["doc2kb_core.py", "doc2kb_dedup.py", "doc2kb_web.py"]
-LOCAL_MODULES = {"doc2kb_core"}
+LOCAL_MODULES = {"doc2kb_core", "doc2kb_dedup"}
 
 
 def python_files():

@@ -21,7 +21,7 @@ assistant can search and answer from.
 | No dependencies | Nothing beyond the language's standard library: no document converters, no office suite on the command line, no third-party parsing libraries | Office formats are parsed from their zip packages and XML directly |
 | Plain-text output | The output is read by an AI assistant | Markdown, no HTML; pictures are separate files |
 | Non-ASCII everywhere | File names, folder names and content are often Chinese; paths contain spaces and brackets | Every step must handle non-ASCII text and special characters |
-| Linux desktop | Any desktop with a web browser | The browser interface is a local web service from the standard library; the dialog mode uses zenity; the command-line mode needs only bash and Python |
+| Linux desktop | Any desktop with a web browser | The browser interface is a local web service from the standard library; the command-line mode needs only bash and Python |
 
 > The dependency rule is the strongest one. If the environment happens to have better tools, the
 > implementation may use them (poppler-utils for PDF, ImageMagick for contact sheets), but it must not
@@ -45,10 +45,11 @@ Two deliverables, with separate responsibilities:
 1. **Parsing engine**: parses documents, extracts content, writes the output. Callable from the command
    line, every behaviour controlled by options, no interface code. Other programs can import it.
 2. **Entry script**: two ways to run
-   - without arguments -> dialogs (everyday manual use)
+   - without arguments -> starts the browser interface (everyday manual use)
    - with arguments -> command line without any interface (scheduled runs)
-3. **Browser interface**: a local web service and a page for everyday manual use (see 6.1a). It runs
-   the parsing engine as a child process with command-line options and holds no conversion logic.
+3. **Browser interface**: a local web service and a page for everyday manual use (see 6.1). It runs
+   the parsing engine, the entry script and the clean-up tool as child processes with their
+   command-line options and holds no conversion logic.
 
 > Why: scheduled jobs have no display and a minimal environment; an interface dependency makes them fail.
 > Both entry points share one engine so the logic never forks.
@@ -75,7 +76,7 @@ as `.msg`). They do not crash the run: they are recognised, skipped, and listed 
 Material often arrives packed. Archives the standard library can read (zip; tar, also gzip, bzip2 or xz
 compressed) are read **like folders**: each supported document inside is a scan item whose path is the
 archive's path followed by the path inside it (`pack.zip/a/report.docx`). That path is used everywhere a
-file path is: the scan list, dialog selection, the "only these files" list, incremental bookkeeping, the
+file path is: the scan list, the selection on the page, the "only these files" list, incremental bookkeeping, the
 index and the report. An archive named directly on the command line stands for its documents.
 
 - **Nested archives** are opened too, up to 3 levels.
@@ -410,58 +411,61 @@ duplicate handling and reports:
 
 ## 6. Run modes
 
-### 6.1 Dialog mode
+### 6.1 Browser interface
 
-Choose a mode first:
+`doc2kb_web.py` serves `doc2kb.html`; the desktop launcher `双击运行.desktop` and `doc2kb.sh` without
+arguments start it. Four tabs:
 
-1. **Folder batch**: choose a folder -> walk it -> **show the file list to confirm or untick**
-   -> choose the output folder -> choose options -> run
-2. **Chosen files**: choose files by hand -> the rest as above
+1. **Folder batch**: choose the source folder -> optional date filter -> scan -> **confirm or untick
+   the file list** -> output folder -> options -> run -> result
+2. **Chosen files**: add documents or archives from one or more folders -> output folder -> options ->
+   run -> result. Chosen files are always converted again.
 3. **Incremental tasks**: manage and run incremental tasks (see 6.3)
+4. **Duplicate clean-up**: run the clean-up tool on a merged or incremental md: a dry run with its
+   report first; the clean-up itself only after a dry run of the same file found duplicates, with a
+   confirmation that names the number of sections and the backup
 
 The walk skips hidden folders, lock files (the office suite's temporary files) and the tool's own output
 folders (or it nests into itself).
 
-Options at least: merge, expand embedded attachments,
-skip pictures, contact sheets.
+Options at least: merge, expand embedded attachments, export pictures, contact sheets, keep every copy.
 
 **One failing file never stops a batch.** Record the reason in the report and continue. Failure types to
 handle: damaged, encrypted, wrong format, parse error.
 
-**Incremental skip**: an existing output is skipped by default, with a "redo everything" option. Skipped
-entries **still appear in the index and report**; otherwise after an incremental run the summary files hold
-only the few new documents, the history vanishes and the user thinks the knowledge base shrank.
-
-### 6.1a Browser interface
-
-`doc2kb_web.py` serves `doc2kb.html`; the desktop launcher `双击运行.desktop` starts it. It offers
-**Folder batch** so far: choose the source folder -> optional date filter -> scan -> **confirm or untick
-the file list** -> output folder -> options -> run -> result.
+**Incremental skip** (folder batch): an existing output is skipped by default, with a "redo everything"
+option. Skipped entries **still appear in the index and report**; otherwise after an incremental run the
+summary files hold only the few new documents, the history vanishes and the user thinks the knowledge base
+shrank.
 
 - **Service**: listens on a random port of 127.0.0.1 only. The address carries a one-time token; every
   API call must send it, and the Host and Origin headers must name this server. Closing the page tells
   the service (sendBeacon); it exits a few seconds after the last page closed. A heartbeat timeout is
   only a fallback and is long enough for a page left in the background. A running task is finished
   before the service exits. Without a browser or without the page file the user is told through zenity
-  or notify-send.
+  or notify-send when one of them exists. Values from requests are logged escaped, so they cannot start
+  log lines of their own.
 - **Paths** are chosen in a folder list the service provides (or typed): conversions need the real
-  paths, which a browser file picker does not give.
-- **One task at a time**, run as `doc2kb_core.py` with the same options as the command line. Progress
-  comes from its `[i/n]` lines; the result from its exit code, STAT and FAILED lines and the report.
-- **Defaults**: output folder `<source>/_doc2kb` (`_知识库` in Chinese), merge on, embedded workbooks
-  expanded, **pictures not exported**, duplicates kept once.
-- **Only this run counts**: a report older than the run is never shown as its result; a converter that
+  paths, which a browser file picker does not give. A path typed while the list loads is kept.
+- **One task at a time**, run as a child process with the same options as the command line. Progress
+  comes from the converter's `[i/n]` lines or the number of incremental tasks done; the result from exit
+  codes, STAT and FAILED lines and the reports.
+- **Defaults**: output folder `<source>/_doc2kb` (`_知识库` in Chinese; for chosen files the folder of the
+  first file), merge on, embedded workbooks expanded, **pictures not exported**, duplicates kept once.
+- **Only this run counts**: a report older than the run is never shown as its result; a program that
   fails shows its exit code and output.
 - **Files that cannot be processed do not stop the rest**: legacy formats are listed and left out; PDF
   files are left out and listed when pdftotext is missing.
-- **Confirmation** names what would be replaced: an existing merged file, or the number of md files a
-  "convert everything again" run replaces.
-- **Cancel** interrupts the converter (SIGINT first, so its temporary folder is removed) and states what
-  is left: in merged mode no merged file (the report lists the documents finished before); in
-  per-document mode the md files written so far, which a later run that skips existing output reuses.
-- **Page**: English or Chinese like the rest of the tool; works with the keyboard; status lines are
-  announced to screen readers; light and dark colour schemes; no horizontal scrolling at 360 px; text
-  from files is written as text, never as markup; nothing is loaded from the network.
+- **Confirmation** names what would be replaced: an existing merged file, the md files of chosen files,
+  or the number of md files a "convert everything again" run replaces.
+- **Cancel** interrupts the running program and the programs it started (SIGINT first, so temporary
+  folders are removed) and states what is left: in merged mode no merged file (the report lists the
+  documents finished before); in per-document mode the md files written so far, which a later run that
+  skips existing output reuses; incremental tasks not reached do not run.
+- **Page**: English or Chinese like the rest of the tool; works with the keyboard (arrow keys, Home and
+  End move between tabs); status lines are announced to screen readers; light and dark colour schemes;
+  no horizontal scrolling at 360 px; text from files is written as text, never as markup; nothing is
+  loaded from the network.
 
 ### 6.2 Command-line mode
 
@@ -544,9 +548,13 @@ Remedies:
   existed, by the same fingerprint, and builds the fingerprint file; it backs up the file before rewriting,
   writes a report, and never deletes source files or pictures
 
-**Several tasks**: the dialogs keep several incremental tasks (name, source folder, output folder) with
-add, edit, delete, run one and run all. Tasks are stored as plain text for direct editing. A task without a
-watermark is started automatically (with a default range) instead of failing.
+**Several tasks**: the browser interface keeps several incremental tasks (name, source folder, output
+folder) with add, edit, delete, preview (dry run), run the ticked ones and run all. Tasks are stored as
+plain text (`~/.config/doc2kb/watch_tasks.conf`, one task per line: name, source, output, separated by
+tabs) for direct editing; names are unique. A task without a watermark runs with a number of days the
+user sets on the page (default 30) instead of failing. Changing a task's output folder leaves its
+watermark and fingerprint file in the old folder, so the page says so before saving. Each task's result
+gives the meaning of its exit code and where its log is.
 
 ### 6.4 Date filter
 
@@ -664,7 +672,8 @@ missing, what to install, or which alternative to use) instead of failing halfwa
 23a. **GBK-encoded Chinese file names**: scanning, parsing, writing and printing never crash; output and
      reports show the correct names, not question marks; such a file does not affect the rest of the batch
 23b. Browser interface: requests without the token or with another Host or Origin are refused; the
-     service listens on 127.0.0.1 only and exits after the last page closes, never during a run
+     service listens on 127.0.0.1 only and exits after the last page closes, never during a run;
+     `doc2kb.sh` without arguments starts it
 24. Large batches (dozens of documents, several folder levels, many identical names) are handled correctly;
     outputs with the same name do not overwrite each other
 

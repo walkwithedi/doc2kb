@@ -16,7 +16,7 @@ body:
   - type: input
     id: command
     attributes:
-      label: Command or dialog choices
+      label: Command, or the tab and choices in the browser interface
       placeholder: "python3 doc2kb_core.py --batch SOURCE -o OUTPUT --merge"
     validations:
       required: true

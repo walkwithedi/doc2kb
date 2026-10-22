@@ -415,39 +415,25 @@ class ShellTest(Tmp):
         self.assertEqual(p.returncode, 0)
         self.assertIn("Exit codes", p.stdout)
 
-    def test_dialog_merged(self):
-        fx.build_all(self.p("src"), english=True)
-        out = self.p("out")
-        os.makedirs(out)
-        bindir = self.p("bin")
-        os.makedirs(bindir)
-        files = "|".join(self.p("src", n) for n in ("report-en.docx", "mail-en.eml"))
-        fake = r"""#!/bin/bash
-args="$*"
-echo "$args" >> "%s"
-case "$args" in
-  *"— Mode"*) echo "Chosen files" ;;
-  *"Date filter"*) exit 1 ;;
-  *"--multiple"*) echo "%s" ;;
-  *"--directory"*) echo "%s" ;;
-  *"--checklist"*) echo "Merge|Expand workbooks" ;;
-  *"--progress"*) cat >/dev/null ;;
-  *"--text-info"*) exit 1 ;;
-esac
-exit 0
-""" % (self.p("calls.log"), files, out)
-        z = os.path.join(bindir, "zenity")
-        with open(z, "w", encoding="utf-8") as f:
-            f.write(fake)
-        os.chmod(z, 0o700)
-        env = {"PATH": bindir + os.pathsep + os.environ["PATH"], "DOC2KB_LANG": "en"}
-        p = run(["bash", os.path.join(TOOL, "doc2kb.sh")], check=False, env=env)
-        self.assertEqual(p.returncode, 0, p.stdout + p.stderr + read(self.p("calls.log")))
-        merged = [n for n in os.listdir(out) if n.endswith(".md") and not n.startswith("_")]
-        self.assertEqual(len(merged), 1, os.listdir(out))
-        text = read(os.path.join(out, merged[0]))
-        self.assertIn("report-en.docx", text)
-        self.assertIn("mail-en.eml", text)
+    def test_without_arguments_starts_browser_interface(self):
+        # BROWSER=true: the "browser" is a command that does nothing, so no window opens
+        env = dict(os.environ, BROWSER="true", PYTHONIOENCODING="utf-8", DOC2KB_LANG="en")
+        p = subprocess.Popen(["bash", os.path.join(TOOL, "doc2kb.sh")], stdout=subprocess.PIPE,
+                             stderr=subprocess.DEVNULL, universal_newlines=True, encoding="utf-8", env=env)
+        try:
+            line = p.stdout.readline()
+        finally:
+            p.kill()
+            p.wait(10)
+            p.stdout.close()
+        self.assertIn("http://127.0.0.1:", line)
+        self.assertIn("/?t=", line)
+
+    def test_help_names_the_browser_interface(self):
+        p = self.sh("-h")
+        self.assertEqual(p.returncode, 0)
+        self.assertIn("browser", p.stdout)
+        self.assertNotIn("zenity", p.stdout)
 
 
 if __name__ == "__main__":
