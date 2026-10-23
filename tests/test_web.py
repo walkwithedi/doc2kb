@@ -115,7 +115,7 @@ class WebTest(unittest.TestCase):
         kinds = {f["name"]: f["kind"] for f in d["files"]}
         self.assertEqual(kinds["report-en.docx"], "doc")
         self.assertNotIn("notes.txt", kinds)
-        self.assertEqual(kinds["legacy-en.doc"], "legacy")
+        self.assertEqual(kinds["legacy-en.msg"], "legacy")
         st, d = self.srv.request("GET", "/api/ls?path=relative/path")
         self.assertEqual(st, 400)
         # a folder still to be created: the nearest existing one is listed
@@ -128,7 +128,7 @@ class WebTest(unittest.TestCase):
         job = self.srv.wait_job()
         rels = [f["rel"] for f in job["result"]["files"]]
         self.assertIn("report-en.docx", rels)
-        self.assertEqual(job["result"]["legacy"], ["legacy-en.doc"])
+        self.assertEqual(job["result"]["legacy"], ["legacy-en.msg"])
         out = job["result"]["out_default"]
         self.assertEqual(out, os.path.join(self.src, "_doc2kb"))
         body = {"src": self.src, "out": out, "only": ["report-en.docx", "mail-en.eml"],
@@ -150,7 +150,7 @@ class WebTest(unittest.TestCase):
         self.assertEqual(check["replace"], ["src.md"])
 
     def test_files_run(self):
-        files = [os.path.join(self.src, n) for n in ("report-en.docx", "mail-en.eml", "legacy-en.doc")]
+        files = [os.path.join(self.src, n) for n in ("report-en.docx", "mail-en.eml", "legacy-en.msg")]
         body = {"mode": "files", "files": files, "merge": True, "inline": True}
         st, check = self.srv.request("POST", "/api/check", body=body)
         self.assertEqual(st, 200, check)
@@ -177,7 +177,7 @@ class WebTest(unittest.TestCase):
 
     def test_files_refusals(self):
         for files in ([], ["relative.docx"], [os.path.join(self.src, "missing.docx")],
-                      [os.path.join(self.src, "legacy-en.doc")]):
+                      [os.path.join(self.src, "legacy-en.msg")]):
             st, d = self.srv.request("POST", "/api/run", body={"mode": "files", "files": files})
             self.assertEqual(st, 400, (files, d))
             self.assertNotIn("source folder", d["error"])

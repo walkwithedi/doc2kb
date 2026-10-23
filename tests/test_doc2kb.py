@@ -104,7 +104,7 @@ class ConverterTest(Tmp):
         report = read(os.path.join(out, "_batch-report.txt"))
         self.assertIn("charts drawn with shapes", report)
         self.assertIn("Need a new format first", report)
-        self.assertIn("legacy-en.doc", report)
+        self.assertIn("legacy-en.msg", report)
         self.assertIn("Duplicate files", report)
         self.assertTrue(os.path.isfile(os.path.join(out, "_image-list.md")))
 
@@ -150,7 +150,7 @@ class ConverterTest(Tmp):
         src = self.p("src")
         fx.build_all(src, english=True)
         p = run([sys.executable, CORE, "--batch", src, "--scan-only"])
-        self.assertIn("LEGACY\tlegacy-en.doc", p.stdout)
+        self.assertIn("LEGACY\tlegacy-en.msg", p.stdout)
         self.assertEqual(len(re.findall(r"^OK\t", p.stdout, re.M)), 5)
         p = run([sys.executable, CORE, "--batch", src, "--since", "2999-01-01", "-o", self.p("o")], check=False)
         self.assertEqual(p.returncode, core.NO_MATCH)
@@ -202,7 +202,7 @@ class ArchiveTest(Tmp):
             z.writestr("a/report.docx", report)          # same bytes as the file outside
             z.writestr("../../escape.xlsx", book)         # must not leave the temporary folder
             z.writestr("inner.zip", inner.getvalue())
-            z.writestr("old.doc", b"\xd0\xcf\x11\xe0")
+            z.writestr("old.msg", b"\xd0\xcf\x11\xe0")
             z.writestr("__MACOSX/._x.docx", b"junk")
             z.writestr("notes.7z", b"7z")
             z.writestr("locked.docx", b"x")
@@ -240,7 +240,7 @@ class ArchiveTest(Tmp):
         for rel in ("pack.zip/a/report.docx", "pack.zip/inner.zip/deep/slides.pptx", "pack.zip/escape.xlsx",
                     "pack.zip/报告.pptx", "b.tar.gz/x/book.xlsx", "broken.zip"):
             self.assertIn("OK\t" + rel + "\t", p.stdout)
-        self.assertIn("LEGACY\tpack.zip/old.doc", p.stdout)
+        self.assertIn("LEGACY\tpack.zip/old.msg", p.stdout)
         self.assertNotIn("__MACOSX", p.stdout)
 
         out = self.p("out")
@@ -317,6 +317,94 @@ class ArchiveTest(Tmp):
             core.ARC_MAX_MEMBER = old
         self.assertEqual(len(ok), 1)
         self.assertIn("larger than", ok[0]["error"])
+
+
+class LegacyOfficeTest(Tmp):
+    """Legacy binary Office files built by the fixtures: text, tables, slides, metadata, errors."""
+
+    def convert(self, path):
+        ext = os.path.splitext(path)[1]
+        report = core.Report()
+        md, manifest = core.convert(path, ext, self.d, report, save_images=False)
+        self.assertEqual(manifest, [])
+        return md, report
+
+    def test_xls(self):
+        md, report = self.convert(fx.xls(self.p("book.xls")))
+        self.assertIn("## Sheet: 数据", md)
+        self.assertIn("## Sheet: Second", md)
+        self.assertNotIn("Chart1", md)
+        self.assertIn("| Item | Amount | 日期 |", md)
+        self.assertIn("| " + "苹果和香蕉的长名称" * 3 + " | 3.5 | 2026-03-04 |", md)   # cut across CONTINUE
+        self.assertIn("| Riverside Clinic supplies list | -12 | 2026-03-05 |", md)  # MULRK, custom date
+        self.assertIn("| 合计 | TRUE | #DIV/0! |", md)                                 # formula text, boolean, error
+        self.assertIn("| 1.25 |", md)
+        self.assertEqual(report.warnings, [])
+
+    def test_doc(self):
+        md, _ = self.convert(fx.doc(self.p("memo.doc")))
+        self.assertTrue(md.startswith("Intro paragraph\n"))
+        self.assertIn("| c1 first c1 second | B1 |   |\n| --- | --- | --- |\n|   | B2 | C2 |", md)
+        self.assertIn("Page 7 of the report", md)       # field code dropped, result kept
+        self.assertNotIn("PAGE", md)
+
+    def test_ppt(self):
+        md, _ = self.convert(fx.ppt(self.p("deck.ppt")))
+        self.assertIn("## Slide 1\n\n- Project Atlas 概览\n- Second line\n", md)
+        self.assertIn("## Slide 2\n\n- Plain bytes text\n- 中文第二页", md)
+        self.assertNotIn("Old version", md)             # an unreferenced older copy of a slide
+        self.assertNotIn("## Slide 3", md)
+
+    def test_errors(self):
+        for name, build in (("e.xls", fx.xls), ("e.doc", fx.doc), ("e.ppt", fx.ppt)):
+            with self.assertRaisesRegex(ValueError, "password protected"):
+                self.convert(build(self.p(name), encrypted=True))
+        with open(self.p("bad.xls"), "wb") as f:
+            f.write(bytes.fromhex("d0cf11e0a1b11ae1") + bytes(600))
+        with self.assertRaisesRegex(ValueError, "not a readable xls file"):
+            self.convert(self.p("bad.xls"))
+        data = fx.doc_bytes()
+        with open(self.p("cut.doc"), "wb") as f:
+            f.write(data[:len(data) // 2])
+        with self.assertRaises(ValueError):
+            self.convert(self.p("cut.doc"))
+
+    def test_metadata(self):
+        x = fx.xls(self.p("a.xls"), author="张三", last_author="Riverside Clinic")
+        self.assertEqual(core.doc_authors(x), ("张三", "Riverside Clinic"))
+        # 2026-03-04 05:06:07 UTC as a FILETIME
+        saved = (1772600767 + 11644473600) * 10 ** 7
+        d = fx.doc(self.p("a.doc"), author="李四", saved=saved)
+        self.assertEqual(core.doc_authors(d), ("李四", ""))
+        t, src = core.read_doc_modified(d)
+        self.assertEqual(src, "doc")
+        self.assertEqual(t, core.datetime.datetime.fromtimestamp(1772600767).strftime("%Y-%m-%d %H:%M"))
+        self.assertEqual(core.doc_authors(fx.ppt(self.p("a.ppt"))), ("", ""))
+        self.assertEqual(core.doc_authors(fx.xlsx(self.p("a.xlsx"))), ("", ""))
+        with open(self.p("n.txt"), "w") as f:
+            f.write("plain")
+        self.assertEqual(core.doc_authors(self.p("n.txt")), ("", ""))
+
+    def test_batch(self):
+        src = self.p("src")
+        os.makedirs(src)
+        fx.xls(self.p("src", "book.xls"))
+        fx.doc(self.p("src", "memo.doc"))
+        fx.ppt(self.p("src", "deck.ppt"))
+        fx.ppt(self.p("src", "locked.ppt"), encrypted=True)
+        import zipfile
+        with zipfile.ZipFile(self.p("src", "pack.zip"), "w") as z:
+            z.writestr("in/old.xls", fx.xls_bytes(author="Riverside Clinic"))     # not a byte copy of book.xls
+        out = self.p("out")
+        p = run([sys.executable, CORE, "--batch", src, "-o", out, "--no-images"])
+        s = stats(p.stdout)
+        # the workbook in the archive has the same text as book.xls, so it counts as a duplicate
+        self.assertEqual((s["new"], s["dup"], s["failed"], s["legacy"]), (3, 1, 1, 0))
+        self.assertIn("pack.zip/in/old.xls", p.stdout)
+        self.assertIn("| 合计 | TRUE | #DIV/0! |", read(self.p("out", "book.md")))
+        self.assertIn("## Slide 2", read(self.p("out", "deck.md")))
+        self.assertIn("| c1 first c1 second | B1 |", read(self.p("out", "memo.md")))
+        self.assertIn("password protected", read(self.p("out", "_batch-report.txt")))
 
 
 class DedupToolTest(Tmp):

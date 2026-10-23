@@ -60,16 +60,17 @@ Two deliverables, with separate responsibilities:
 
 ### 3.1 Input formats
 
-Required: current Office formats (word processing, spreadsheet, presentation), PDF, and the standard mail
-archive format (MIME mail, usually `.eml`).
+Required: current Office formats (word processing, spreadsheet, presentation), the legacy binary Office
+formats of Office 97 and later (`.doc`, `.xls`, `.ppt`, section 3.4a), PDF, and the standard mail archive
+format (MIME mail, usually `.eml`).
 
-Explicitly **not** supported: legacy binary Office formats and mail clients' private binary formats (such
-as `.msg`). They do not crash the run: they are recognised, skipped, and listed in the report under
-"need a new format first", asking the user to save them in a current format.
+Explicitly **not** supported: mail clients' private binary formats (such as `.msg`). They do not crash the
+run: they are recognised, skipped, and listed in the report under "need a new format first", asking the
+user to save them in a current format.
 
-> Current Office formats are zip packages of XML. Legacy binary formats are a different compound-file
-> structure that is costly to parse for little gain. Detect the real type from the file's **magic number**,
-> not only its extension: users rename old files to new extensions.
+> Current Office formats are zip packages of XML; the legacy ones are compound files (OLE2) holding binary
+> streams. Detect the real type from the file's **magic number**, not only its extension: users rename old
+> files to new extensions.
 
 ### 3.1a Archives
 
@@ -87,7 +88,7 @@ index and the report. An archive named directly on the command line stands for i
   the documents of one archive at most 2 GB together. Members over a limit are not opened.
 - **Not readable**: encrypted members, damaged archives, archives over the limits and formats that need a
   third-party tool (`.7z`, `.rar`) are listed as failed with the reason; the rest of the archive and the
-  batch go on. Legacy formats inside an archive go to "need a new format first" as usual.
+  batch go on. Unsupported legacy formats (`.msg`) inside an archive go to "need a new format first" as usual.
 - **Names**: zip files made on Chinese Windows store GBK names without the UTF-8 flag; decode them as GBK
   so the paths are readable. Hidden entries and the `__MACOSX` folder are skipped, like hidden files.
 - **Times**: a member's file system time is its time stored in the archive. For change detection
@@ -143,6 +144,27 @@ Cap the rows per sheet (a few thousand); truncate beyond it and say so in the te
   Warn "this slide may hold a chart drawn with shapes; take a screenshot", so the user does not assume the
   content is complete.
 
+### 3.4a Legacy binary Office files
+
+Office 97 and later store `.doc`, `.xls` and `.ppt` as compound files (OLE2): a small file system of
+sectors, a sector allocation table, a directory and a mini stream for small streams. Read it with the
+standard library and take the text; the output has the same shape as for the current formats.
+
+- **Spreadsheets** (BIFF8 workbook stream): worksheets only, in order, with their names; the shared string
+  table, whose strings may be cut across continuation records; numbers in all their record forms; text
+  results of formulas; booleans and error values; dates by the cell format as in 3.3, including the 1904
+  system. Row cap, empty rows and empty trailing columns as in 3.3.
+- **Word documents**: the main text from the piece table (pieces in single-byte or Unicode form); field
+  codes dropped and their results kept; tables rebuilt from the cell marks and the table flags in the
+  paragraph properties, so a cell with several paragraphs stays one cell. No heading levels, no pictures.
+- **Presentations**: slides in the order of the document's slide list, found through the newest user edit
+  and its persist directory, so older copies left by fast saves are not read twice; each slide's text from
+  the slide and from the slide list it refers to. No pictures.
+- **Not readable**: password-protected files, files from before Office 97 (Word 6/95, Excel 5/95) and
+  damaged structures are listed as failed with the reason; the rest of the batch goes on.
+- **Metadata**: the summary information property set gives the author, the last saved by and the last saved
+  time (section 5.4).
+
 ### 3.5 Expanding embedded attachments
 
 Word processing documents often embed spreadsheets or sub-documents. These attachments frequently carry
@@ -183,7 +205,7 @@ declares one encoding and uses another, so try candidate encodings in turn.
 **Attachments**: **not read**; a list below the body records them. Requirements:
 
 - a table with number, attachment name, size and type
-- three types: can be converted separately, legacy binary format that needs converting first, unsupported
+- three types: can be converted separately, legacy binary format that needs converting first (`.msg`), unsupported
 - a note before the list saying the attachments were not read and how to get their content (save the
   attachment from the mail and convert that file)
 - no section when there are no attachments
@@ -375,6 +397,7 @@ Rules:
 - In index and report tables, fallback times get a visible mark (such as `※`).
 - Handle time zones: document metadata is usually stored in UTC and shown converted to local time; accept
   explicit offsets as well.
+- Legacy Office files: the last saved time of the summary information, otherwise its creation time.
 
 ### 5.5 Reports and index
 
@@ -406,6 +429,9 @@ duplicate handling and reports:
   pictures, document time and its source) and returns `(path, file_of, finish)`: the main output file or
   None; a map from `rel` to the output file holding that document, which fingerprint lines name; and
   `finish(report_path)` or None, called after the summary to print the writer's own lines.
+- `doc_authors(path)` returns `(author, last modified by)` as recorded in a document: the core properties
+  of docx, xlsx and pptx, the summary information of legacy Office files, the PDF Author entry (with
+  pdfinfo) and the sender of a mail; an empty string where there is none.
 
 ---
 
@@ -454,7 +480,7 @@ shrank.
   first file), merge on, embedded workbooks expanded, **pictures not exported**, duplicates kept once.
 - **Only this run counts**: a report older than the run is never shown as its result; a program that
   fails shows its exit code and output.
-- **Files that cannot be processed do not stop the rest**: legacy formats are listed and left out; PDF
+- **Files that cannot be processed do not stop the rest**: unsupported legacy formats are listed and left out; PDF
   files are left out and listed when pdftotext is missing.
 - **Confirmation** names what would be replaced: an existing merged file, the md files of chosen files,
   or the number of md files a "convert everything again" run replaces.
@@ -641,7 +667,9 @@ missing, what to install, or which alternative to use) instead of failing halfwa
     `pack.zip/inner.zip/x.pptx`; a member named `../../x.xlsx` is written nowhere outside the temporary
     folder; GBK zip names are readable; encrypted members, damaged archives and `.7z` are listed as failed
     with a reason; no temporary files remain after the run
-7. Legacy binary formats: no crash, listed under "need a new format first"
+7. Legacy binary formats: `.doc`, `.xls` and `.ppt` are converted (shared strings cut across records,
+   dates, formula text, a table cell with two paragraphs, field results, slides in slide-list order without
+   older copies); encrypted ones are listed as failed; `.msg` is listed under "need a new format first"
 8. Damaged or encrypted files: no crash, listed as failed, other files unaffected
 
 ### 8.2 Output structure

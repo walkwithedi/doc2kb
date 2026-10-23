@@ -2,6 +2,12 @@
 
 Releases follow VERSION; merging a version change to main publishes v<version> (.github/workflows/release.yml).
 
+## 2.1.0
+
+- Reads the legacy binary Office formats of Office 97 and later: `.xls` (sheets, shared strings, numbers, dates, formula text), `.doc` (paragraphs, tables, field results) and `.ppt` (the text of every slide in order). Pictures are not exported from them. Password-protected files and files from before Office 97 are listed as failed with the reason. `.msg` is still listed under "need a new format first".
+- Legacy Office files take their document time from the summary information.
+- Library: `doc_authors(path)` returns the author and last-modified-by recorded in a document.
+
 ## 2.0.0
 
 - The browser interface covers everything the dialogs did: **Chosen files**, **Incremental tasks** (add, edit, delete, preview, run ticked or all; the first run's number of days is set on the page; task names stay unique; changing a task's output folder is confirmed because the watermark stays in the old folder) and **Duplicate clean-up** (dry run with its report, then a confirmed clean-up with a backup).
