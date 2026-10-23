@@ -260,7 +260,304 @@ def build_all(folder, english=False):
         "eml": eml(os.path.join(folder, f"mail-{tag}.eml"), english),
         "pdf": pdf(os.path.join(folder, f"notes-{tag}.pdf"), [f"Project Atlas notes ({tag})"] + [f"Line {i} of the minutes" for i in range(30)]),
     }
-    with open(os.path.join(folder, f"legacy-{tag}.doc"), "wb") as f:
+    with open(os.path.join(folder, f"legacy-{tag}.msg"), "wb") as f:
         f.write(b"\xd0\xcf\x11\xe0")
-    out["legacy"] = os.path.join(folder, f"legacy-{tag}.doc")
+    out["legacy"] = os.path.join(folder, f"legacy-{tag}.msg")
     return out
+
+
+# ---------------------------------------------------------------- legacy binary Office (OLE2)
+
+FREESECT, ENDOFCHAIN, FATSECT, NOSTREAM = 0xFFFFFFFF, 0xFFFFFFFE, 0xFFFFFFFD, 0xFFFFFFFF
+SUMMARY_FMTID = bytes.fromhex("e0859ff2f94f6810ab9108002b27b3d9")
+
+
+def cfb_bytes(streams):
+    """An OLE2 compound file (512-byte sectors) holding the given {name: bytes} at the top level.
+    Streams under 4096 bytes go to the mini stream, as Office writes them."""
+    names = list(streams)
+    mini, mini_start, big = b"", {}, []
+    for n in names:
+        data = streams[n]
+        if len(data) < 4096:
+            mini_start[n] = len(mini) // 64
+            mini += data.ljust((len(data) + 63) // 64 * 64 or 64, b"\0")
+        else:
+            big.append(n)
+    n_mini_sec = len(mini) // 64
+    minifat = []
+    for n in names:
+        if n in mini_start:
+            k = max(1, (len(streams[n]) + 63) // 64)
+            s = mini_start[n]
+            minifat += [s + i + 1 for i in range(k - 1)] + [ENDOFCHAIN]
+    assert len(minifat) == n_mini_sec
+
+    def sectors(data):
+        return max(1, (len(data) + 511) // 512) if data else 0
+
+    dir_bytes = 128 * (len(names) + 1)
+    n_dir = (dir_bytes + 511) // 512
+    minifat_raw = struct.pack("<%dI" % len(minifat), *minifat) if minifat else b""
+    n_minifat = sectors(minifat_raw)
+    n_ministream = sectors(mini)
+    big_secs = [sectors(streams[n]) for n in big]
+    others = n_dir + n_minifat + n_ministream + sum(big_secs)
+    n_fat = 1
+    while n_fat * 128 < others + n_fat:
+        n_fat += 1
+    fat, layout, nxt = [FATSECT] * n_fat, {}, n_fat
+
+    def chain(count):
+        nonlocal nxt
+        start = nxt
+        fat.extend([nxt + i + 1 for i in range(count - 1)] + [ENDOFCHAIN])
+        nxt += count
+        return start
+
+    dir_start = chain(n_dir)
+    minifat_start = chain(n_minifat) if n_minifat else ENDOFCHAIN
+    root_start = chain(n_ministream) if n_ministream else ENDOFCHAIN
+    for n, k in zip(big, big_secs):
+        layout[n] = chain(k)
+    fat += [FREESECT] * (n_fat * 128 - len(fat))
+
+    def entry(name, etype, start, size, child=NOSTREAM, right=NOSTREAM):
+        raw = name.encode("utf-16-le")
+        return (raw.ljust(64, b"\0") + struct.pack("<HBB", len(raw) + 2, etype, 1) +
+                struct.pack("<III", NOSTREAM, right, child) + b"\0" * 36 +
+                struct.pack("<III", start, size, 0))
+
+    entries = [entry("Root Entry", 5, root_start, len(mini), child=1 if names else NOSTREAM)]
+    for i, n in enumerate(names):
+        start = layout.get(n, mini_start.get(n))
+        entries.append(entry(n, 2, start, len(streams[n]), right=i + 2 if i + 1 < len(names) else NOSTREAM))
+    dir_raw = b"".join(entries).ljust(n_dir * 512, b"\0")
+
+    header = (bytes.fromhex("d0cf11e0a1b11ae1") + b"\0" * 16 +
+              struct.pack("<HHHHH", 0x3E, 3, 0xFFFE, 9, 6) + b"\0" * 6 +
+              struct.pack("<IIIIIIIII", 0, n_fat, dir_start, 0, 4096, minifat_start, n_minifat, ENDOFCHAIN, 0))
+    difat = list(range(n_fat)) + [FREESECT] * (109 - n_fat)
+    header += struct.pack("<109I", *difat)
+    body = struct.pack("<%dI" % len(fat), *fat) + dir_raw
+    if n_minifat:
+        body += minifat_raw.ljust(n_minifat * 512, b"\0")
+    if n_ministream:
+        body += mini.ljust(n_ministream * 512, b"\0")
+    for n, k in zip(big, big_secs):
+        body += streams[n].ljust(k * 512, b"\0")
+    return header + body
+
+
+def summary_info(author="", last_author="", saved=None, codepage=936):
+    """A SummaryInformation property set: code page, author, last saved by, last saved time."""
+    props = [(1, struct.pack("<Ihh", 2, codepage, 0))]
+    enc = {65001: "utf-8"}.get(codepage, "cp%d" % codepage)
+    for pid, text in ((4, author), (8, last_author)):
+        if text:
+            raw = text.encode(enc) + b"\0"
+            props.append((pid, struct.pack("<II", 0x1E, len(raw)) + raw.ljust((len(raw) + 3) // 4 * 4, b"\0")))
+    if saved is not None:
+        props.append((13, struct.pack("<IQ", 0x40, saved)))
+    head = 8 + 8 * len(props)
+    offs, body = [], b""
+    for pid, raw in props:
+        offs.append((pid, head + len(body)))
+        body += raw
+    pset = struct.pack("<II", head + len(body), len(props)) + b"".join(struct.pack("<II", *o) for o in offs) + body
+    return struct.pack("<HHI", 0xFFFE, 0, 0) + b"\0" * 16 + struct.pack("<I", 1) + SUMMARY_FMTID + struct.pack("<I", 48) + pset
+
+
+def _rec(rt, body):
+    return struct.pack("<HH", rt, len(body)) + body
+
+
+def _xlstr(text, len_bytes=2):
+    wide = any(ord(c) > 0xFF for c in text)
+    raw = text.encode("utf-16-le" if wide else "latin-1")
+    n = struct.pack("<H", len(text)) if len_bytes == 2 else bytes([len(text)])
+    return n + bytes([1 if wide else 0]) + raw
+
+
+def _sst_records(strings, limit):
+    """SST and CONTINUE records with at most limit bytes each; strings may be cut, the
+    continuation starting with a flag byte as Excel writes it."""
+    segs = [bytearray(struct.pack("<II", len(strings), len(strings)))]
+    for s in strings:
+        wide = any(ord(c) > 0xFF for c in s)
+        width = 2 if wide else 1
+        if len(segs[-1]) + 3 > limit:
+            segs.append(bytearray())
+        segs[-1] += struct.pack("<HB", len(s), 1 if wide else 0)
+        rest = s
+        while rest:
+            room = (limit - len(segs[-1])) // width
+            if room <= 0:
+                segs.append(bytearray([1 if wide else 0]))
+                continue
+            part, rest = rest[:room], rest[room:]
+            segs[-1] += part.encode("utf-16-le" if wide else "latin-1")
+    return _rec(0x00FC, bytes(segs[0])) + b"".join(_rec(0x003C, bytes(s)) for s in segs[1:])
+
+
+def _rk(i):
+    return ((i << 2) | 2) & 0xFFFFFFFF
+
+
+def xls_bytes(encrypted=False, author="", last_author=""):
+    """A workbook with two worksheets and a chart sheet: shared strings cut across CONTINUE
+    records, numbers as NUMBER, RK and MULRK, dates by a built-in and a custom format, a formula
+    with a text result, a boolean and an error value."""
+    strings = ["Item", "Amount", "苹果和香蕉的长名称" * 3, "Riverside Clinic supplies list", "日期"]
+    sst = _sst_records(strings, 40)
+    bof_g = _rec(0x0809, struct.pack("<HHHHII", 0x0600, 0x0005, 0, 0, 0, 0))
+    bof_s = _rec(0x0809, struct.pack("<HHHHII", 0x0600, 0x0010, 0, 0, 0, 0))
+    fmt = _rec(0x041E, struct.pack("<H", 164) + _xlstr("yyyy\\-mm\\-dd"))
+    xfs = b"".join(_rec(0x00E0, struct.pack("<HH", 0, f) + b"\0" * 16) for f in (0, 14, 164, 0))
+    filepass = _rec(0x002F, b"\0" * 6) if encrypted else b""
+
+    def cell(row, col, xf=0):
+        return struct.pack("<HHH", row, col, xf)
+
+    s1 = (bof_s +
+          _rec(0x00FD, cell(0, 0) + struct.pack("<I", 0)) + _rec(0x00FD, cell(0, 1) + struct.pack("<I", 1)) +
+          _rec(0x00FD, cell(0, 2) + struct.pack("<I", 4)) +
+          _rec(0x00FD, cell(1, 0) + struct.pack("<I", 2)) + _rec(0x0203, cell(1, 1) + struct.pack("<d", 3.5)) +
+          _rec(0x027E, cell(1, 2, 1) + struct.pack("<I", _rk(46085))) +
+          _rec(0x00FD, cell(2, 0) + struct.pack("<I", 3)) +
+          _rec(0x00BD, struct.pack("<HH", 2, 1) + struct.pack("<HI", 0, _rk(-12)) + struct.pack("<HI", 2, _rk(46086)) + struct.pack("<H", 2)) +
+          _rec(0x0006, cell(3, 0) + bytes([0, 0, 0, 0, 0, 0, 0xFF, 0xFF]) + b"\0" * 6) + _rec(0x0207, _xlstr("合计")) +
+          _rec(0x0205, cell(3, 1) + bytes([1, 0])) + _rec(0x0205, cell(3, 2) + bytes([0x07, 1])) +
+          _rec(0x000A, b""))
+    s2 = bof_s + _rec(0x0203, cell(0, 0) + struct.pack("<d", 1.25)) + _rec(0x000A, b"")
+
+    def globals_(pos1, pos2):
+        return (bof_g + filepass + fmt + xfs +
+                _rec(0x0085, struct.pack("<IBB", pos1, 0, 0) + _xlstr("数据", 1)) +
+                _rec(0x0085, struct.pack("<IBB", 0, 0, 2) + _xlstr("Chart1", 1)) +
+                _rec(0x0085, struct.pack("<IBB", pos2, 0, 0) + _xlstr("Second", 1)) +
+                sst + _rec(0x000A, b""))
+
+    g = globals_(0, 0)
+    wb = globals_(len(g), len(g) + len(s1)) + s1 + s2
+    streams = {"Workbook": wb.ljust(4096, b"\0")}
+    if author or last_author:
+        streams["\x05SummaryInformation"] = summary_info(author, last_author)
+    return cfb_bytes(streams)
+
+
+def xls(path, **kw):
+    with open(path, "wb") as f:
+        f.write(xls_bytes(**kw))
+    return path
+
+
+def doc_bytes(encrypted=False, author="", saved=None):
+    """A Word 97 document: a paragraph in a compressed piece, then a Unicode piece with a two-row
+    table (one cell holds two paragraphs, one cell is empty), a field and a closing paragraph.
+    The table rows are marked in the paragraph properties the way Word marks them."""
+    p1 = "Intro paragraph\r"
+    cells = ["c1 first\r", "c1 second\x07", "B1\x07", "\x07", "\x07",
+             "\x07", "B2\x07", "C2\x07", "\x07"]
+    tail = "Page \x13 PAGE \x147\x15 of the report\r"
+    p2 = "".join(cells) + tail
+    text = p1 + p2
+    fc1, fc2 = 2048, 2560
+    flags = 0x0200 | (0x0100 if encrypted else 0)
+    fib = bytearray(struct.pack("<HHHHHH", 0xA5EC, 0x00C1, 0, 0x0409, 0, flags)).ljust(32, b"\0")
+    fib += struct.pack("<H", 14) + b"\0" * 28
+    lw = [0] * 22
+    lw[3] = len(text)
+    fib += struct.pack("<H", 22) + struct.pack("<22i", *lw)
+    fclcb = [0] * (93 * 2)
+
+    # paragraph property page: one run per paragraph of the second piece
+    marks, pos = [], fc2
+    for part in cells + [tail]:
+        marks.append((pos, pos + len(part) * 2, part))
+        pos += len(part) * 2
+    fkp = bytearray(512)
+    crun = len(marks)
+    struct.pack_into("<%dI" % (crun + 1), fkp, 0, *([m[0] for m in marks] + [marks[-1][1]]))
+    in_table = bytes([3, 0, 0]) + struct.pack("<H", 0x2416) + b"\x01"          # cb form, 5 bytes
+    row_end = bytes([0, 4, 0, 0]) + struct.pack("<H", 0x2416) + b"\x01" + struct.pack("<H", 0x2417) + b"\x01"
+    fkp[400:400 + len(in_table)] = in_table
+    fkp[420:420 + len(row_end)] = row_end
+    for r, (_, _, part) in enumerate(marks):
+        if part is tail:
+            off = 0
+        elif r in (4, 8):
+            off = 420 // 2
+        else:
+            off = 400 // 2
+        fkp[(crun + 1) * 4 + r * 13] = off
+    fkp[511] = crun
+    page = 6
+    wd = bytearray(fib).ljust(fc1, b"\0")
+    wd += p1.encode("cp1252")
+    wd = wd.ljust(fc2, b"\0") + p2.encode("utf-16-le")
+    wd = wd.ljust(page * 512, b"\0") + fkp
+
+    bte = struct.pack("<III", fc2, fc2 + len(p2) * 2, page)
+    plc = struct.pack("<III", 0, len(p1), len(text)) + \
+        struct.pack("<HIH", 0, fc1 * 2 | 0x40000000, 0) + struct.pack("<HIH", 0, fc2, 0)
+    clx = b"\x01" + struct.pack("<h", 2) + b"\0\0" + b"\x02" + struct.pack("<I", len(plc)) + plc
+    table = bte + clx
+    fclcb[13 * 2], fclcb[13 * 2 + 1] = 0, len(bte)
+    fclcb[33 * 2], fclcb[33 * 2 + 1] = len(bte), len(clx)
+    wd[32 + 2 + 28 + 2 + 88:32 + 2 + 28 + 2 + 88 + 2 + 93 * 8] = struct.pack("<H", 93) + struct.pack("<186I", *fclcb)
+    streams = {"WordDocument": bytes(wd), "1Table": table.ljust(4096, b"\0")}
+    if author or saved is not None:
+        streams["\x05SummaryInformation"] = summary_info(author, "", saved)
+    return cfb_bytes(streams)
+
+
+def doc(path, **kw):
+    with open(path, "wb") as f:
+        f.write(doc_bytes(**kw))
+    return path
+
+
+def _prec(rt, body, inst=0, container=False):
+    return struct.pack("<HHI", (inst << 4) | (0xF if container else 0), rt, len(body)) + body
+
+
+def ppt_bytes(encrypted=False):
+    """A presentation with two slides in the document's slide list: slide 1 refers to its title
+    in the slide list, slide 2 holds its text in the slide itself. An older copy of slide 2
+    stays in the stream without being referenced, as after a fast save."""
+    def chars(t):
+        return _prec(0x0FA0, t.encode("utf-16-le"))
+
+    slwt = _prec(0x0FF0, _prec(0x03F3, struct.pack("<IIIII", 2, 0, 0, 256, 0)) +
+                 _prec(0x0F9F, struct.pack("<I", 0)) + chars("Project Atlas 概览\rSecond line") +
+                 _prec(0x03F3, struct.pack("<IIIII", 3, 0, 0, 257, 0)), inst=0, container=True)
+    docc = _prec(0x03E8, _prec(0x03E9, b"\0" * 40) + slwt, container=True)
+
+    def slide(inner):
+        return _prec(0x03EE, _prec(0xF002, _prec(0xF00D, inner, container=True), container=True), container=True)
+
+    stale = slide(_prec(0x0FA8, b"Old version"))
+    s1 = slide(_prec(0x0F9E, struct.pack("<i", 0)))
+    s2 = slide(_prec(0x0FA8, b"Plain bytes text") + chars("中文第二页"))
+    stream = bytearray(docc)
+    offs = {1: 0}
+    stream += stale
+    offs[2] = len(stream)
+    stream += s1
+    offs[3] = len(stream)
+    stream += s2
+    pd_off = len(stream)
+    pd = struct.pack("<I", 1 | (3 << 20)) + struct.pack("<III", offs[1], offs[2], offs[3])
+    stream += _prec(0x1772, pd)
+    ue_off = len(stream)
+    stream += _prec(0x0FF5, struct.pack("<IHBBIIIII", 0, 0, 0, 3, 0, pd_off, 1, 4, 0))
+    token = 0xF3D1C4DF if encrypted else 0xE391C05F
+    cu = _prec(0x0FF6, struct.pack("<III", 0x14, token, ue_off) + b"\0" * 8)
+    return cfb_bytes({"PowerPoint Document": bytes(stream).ljust(4096, b"\0"), "Current User": cu})
+
+
+def ppt(path, **kw):
+    with open(path, "wb") as f:
+        f.write(ppt_bytes(**kw))
+    return path

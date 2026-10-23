@@ -8,7 +8,7 @@
 - **Set it and forget it.** An incremental mode for cron converts only what changed since the last run.
 - **Several ways to use it.** Run it in the browser (double-click the launcher), from the command line, or import `doc2kb_core.py` as a library.
 
-Supports `.docx` `.xlsx` `.xlsm` `.pptx` `.pdf` `.eml`, plus archives. Messages and output labels can be English or Chinese.
+Supports `.docx` `.xlsx` `.xlsm` `.pptx` `.pdf` `.eml`, the legacy `.doc` `.xls` `.ppt`, plus archives. Messages and output labels can be English or Chinese.
 
 [中文说明](README.zh-CN.md)
 
@@ -49,7 +49,7 @@ Double-click `双击运行.desktop`, or run `./doc2kb.sh` without arguments (or 
 - **Incremental tasks**: add, edit and delete tasks (name, source folder, output folder), preview them, run the ticked ones or all. A task that never ran takes the documents changed in the last N days (default 30, set on the page). Tasks live in `~/.config/doc2kb/watch_tasks.conf`, the same file earlier versions used.
 - **Duplicate clean-up**: pick a merged or incremental md, run a dry run, check the report, then clean up (the original is backed up first).
 
-Legacy formats are listed and skipped.
+`.msg` files are listed and skipped.
 
 Pictures are not exported unless "Export images" is ticked. The service listens on 127.0.0.1 only, with a one-time token in the address, and exits a few seconds after the last page is closed; "Quit" stops it at once. A run in progress is finished first. Paths are chosen in a folder list the service provides, not with the browser's file picker, because conversions need the real paths. To keep the launcher on the desktop, put a link to it there, not a copy. The service logs to `doc2kb_web.log` next to it (or `~/.cache/doc2kb/` when that folder is read-only).
 
@@ -117,8 +117,8 @@ python3 doc2kb_dedup.py OUTPUT/Documents_20261007_incremental.md
 
 ## Formats
 
-- Supported: `.docx`, `.xlsx`, `.xlsm`, `.pptx`, `.pdf`, `.eml`.
-- Legacy binary formats (`.doc`, `.xls`, `.ppt`, `.msg`) do not crash a run: they are listed under "need a new format first".
+- Supported: `.docx`, `.xlsx`, `.xlsm`, `.pptx`, `.pdf`, `.eml`, and the legacy binary `.doc`, `.xls`, `.ppt` of Office 97 and later (text and tables, no pictures; password-protected and older files are listed as failed).
+- `.msg` does not crash a run: it is listed under "need a new format first".
 - Archives: `.zip`, `.tar`, `.tar.gz`/`.tgz`, `.tar.bz2`/`.tbz2`, `.tar.xz`/`.txz` are read like folders. The documents inside appear as `pack.zip/a/report.docx` in the scan, the index and the report, and work with `--only` and incremental tasks; an archive can also be named directly (`python3 doc2kb_core.py pack.zip`). Archives inside archives are opened up to 3 levels deep. Members are unpacked into a private temporary folder that is removed when the run ends; nothing is written next to the archive and member paths never leave it. Encrypted members, members over 512 MB unpacked, more than 2 GB of documents in one archive, damaged archives and `.7z`/`.rar` (no standard-library reader) are listed as failed with the reason. Zip names written by Chinese Windows without the UTF-8 flag are decoded as GBK.
 - Duplicates, within one run: files with identical bytes (SHA-256, archive members included) are parsed once, preferring a copy whose output exists, then one outside any archive, then the first path; files whose extracted text is identical are then kept once (newest document time). Both kinds are listed in the report's "Duplicate files" section and in a note at the top of the kept copy. `-D` keeps every copy. Across runs, incremental tasks skip text already filed (see above).
 - Merged output (index plus every text in one Markdown file) by default; one file per document as an option.
