@@ -600,6 +600,38 @@ class ShellTest(Tmp):
         self.assertEqual((p.returncode, p.stdout), (0, ""))
         self.assertIn("nothing new", read(os.path.join(out, "_watch.log")))
 
+    def test_incremental_volumes_progress_and_same_day_name(self):
+        src, out = self.p("src"), self.p("out")
+        os.makedirs(src)
+        for i in range(5):
+            fx.docx(self.p("src", "a%d.docx" % i), english=True, intro="First run text %d." % i)
+        sh = os.path.join(TOOL, "doc2kb.sh")
+        p = run(["bash", sh, "-s", src, "-o", out, "-t", "2000-01-01", "-b", "2"], check=False,
+                env={"DOC2KB_LANG": "en", "DOC2KB_PROGRESS": "1"})
+        self.assertEqual(p.returncode, 0, p.stderr)
+        # started by the browser interface: progress lines as they come, not the rest of the output
+        self.assertIn("[1/5] a0.docx", p.stdout)
+        self.assertIn("BATCH\t3\t3", p.stdout)
+        self.assertNotIn("STAT\t", p.stdout)
+        first = sorted(n for n in os.listdir(out) if n.endswith(".md") and "image-list" not in n)
+        self.assertEqual(len(first), 4, first)                   # three volumes and their index
+        self.assertTrue(first[0].endswith("_incremental-01.md") and first[3].endswith("_incremental-index.md"))
+        self.assertIn(first[0] + " … " + first[2], p.stdout)
+        before = {n: read(os.path.join(out, n)) for n in first}
+        for i in range(3):
+            fx.docx(self.p("src", "b%d.docx" % i), english=True, intro="Second run text %d." % i)
+        p = self.sh("-s", src, "-o", out, "-b", "2")             # the same day: a name of its own
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertNotIn("[1/", p.stdout)                        # cron output stays short
+        self.assertEqual({n: read(os.path.join(out, n)) for n in first}, before)
+        second = sorted(n for n in os.listdir(out)
+                        if n.endswith(".md") and "image-list" not in n and n not in first)
+        self.assertEqual(len(second), 3, second)
+        self.assertTrue(re.search(r"_\d{8}-\d{4}_incremental-01\.md$", second[0]), second)
+        p = self.sh("-s", src, "-o", out, "-b", "x")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("--batch-size", p.stderr)
+
     def test_chinese_messages_and_dash_options(self):
         p = self.sh("-s", self.p("nowhere"), "-o", self.p("out"), lang="zh")
         self.assertEqual(p.returncode, 1)

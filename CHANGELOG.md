@@ -8,6 +8,8 @@ Releases follow VERSION; merging a version change to main publishes v<version> (
 - Merged mode with more than one batch writes one volume per batch, `<name>-01.md`, `<name>-02.md`, …, and `<name>-index.md` naming the volume of each document. Duplicates and the fingerprint file are handled across all batches; one batch still gives the single `<name>.md`.
 - A cancelled merged run keeps its finished batches in `.doc2kb_work/` in the output folder and continues from them when started again: unchanged batches are kept, changed ones are done again in place, new files form new batches. `--force` starts again.
 - Library: with more than one batch the `writer` is called once per volume.
+- Incremental runs (`doc2kb.sh`, incremental tasks): `-b N` sets the files per batch (default 1000); more files give dated volumes and an index. A second run on the same day never reuses the name of earlier volumes; a run interrupted earlier that day continues with its first unfinished batch. Started by the browser interface, the script passes the converter's progress lines on as they come; cron output is unchanged.
+- Browser interface, incremental tasks: the page shows "task k of n" even for a single task, and under it the batch and document being converted.
 - Browser interface: "Files per batch"; progress shows the batch; with every file ticked the list is not sent and requests may be up to 32 MB; long file lists are built in steps; in merged mode the choice reads "continue an unfinished run" or "start again from the first batch". Reloading the page shows the running or latest task again in its tab, with its settings, progress, cancel button and result.
 
 ## 2.1.0

@@ -42,6 +42,10 @@
 #   -I                do not export pictures (the default; to say it explicitly)
 #   -E                do not expand embedded workbooks into the text
 #   -x SUFFIX         output name suffix, default "incremental" ("增量" in Chinese)
+#   -b N              files per batch, default 1000 (0 = one batch); more files than that are
+#                     written as volumes NAME-01.md, NAME-02.md, ... with NAME-index.md, and an
+#                     interrupted run started again the same day continues with its first
+#                     unfinished batch
 #   -n                only report which files would be processed (dry run)
 #   -h                show this help
 #
@@ -49,7 +53,7 @@
 # which keeps cron runs fast and small.
 #
 # Every short option has a long form (--days / --since / --images / --no-images /
-# --no-inline / --name-suffix / --dry-run). Input methods and web pages often turn -- into
+# --no-inline / --name-suffix / --batch-size / --dry-run). Input methods and web pages often turn -- into
 # a dash (— or –); the script turns those back into --, but short options avoid the problem.
 #
 # Exit codes: 0 done (also when nothing was new)  1 option or environment error
@@ -112,11 +116,13 @@ doc2kb.sh — 文档转知识库
   -I                不导出图片（默认行为）
   -E                不把嵌入的 Excel 展开进正文
   -x 后缀           输出文件名后缀，默认「增量」
+  -b N              每批文档数，默认 1000（0 表示不分批）；超过时写成分卷 名称-01.md、
+                    名称-02.md……，另附 名称-索引.md；中途中断后当天再次运行，从第一个未完成的批接着做
   -n                只报告会处理哪些文件，不实际生成
   -h                显示帮助
 
   每个短选项都有长选项（--days / --since / --images / --no-images / --no-inline /
-  --name-suffix / --dry-run），但中文输入法容易把 -- 转成破折号，手工敲命令建议用短选项；
+  --name-suffix / --batch-size / --dry-run），但中文输入法容易把 -- 转成破折号，手工敲命令建议用短选项；
   脚本也会把破折号（— –）还原成 --。
 
 退出码: 0 正常（含无新增）  1 参数或环境错误  2 处理失败  3 首次运行未指定时间范围
@@ -185,6 +191,7 @@ SINCE=""
 NOIMG="--no-images"   # cron runs want text only: faster
 NOINLINE=""
 SUFFIX="$(t "incremental" "增量")"
+BATCH_SIZE=1000
 DRYRUN=0
 
 
@@ -211,6 +218,7 @@ while [ $# -gt 0 ]; do
         -i|--images)         NOIMG=""; shift ;;
         -E|--no-inline)      NOINLINE="--no-inline"; shift ;;
         -x|--name-suffix)    SUFFIX="$2"; shift 2 ;;
+        -b|--batch-size)     BATCH_SIZE="$2"; shift 2 ;;
         -n|--dry-run)        DRYRUN=1; shift ;;
         -h|--help)           usage ;;
         *) echo "$(t "unknown option" "未知参数"): $1" >&2; exit 1 ;;
@@ -225,6 +233,9 @@ command -v python3 >/dev/null 2>&1 || { t "python3 not found" "未找到 python3
 
 if [ -n "$DAYS" ] && ! echo "$DAYS" | grep -qE '^[0-9]+$'; then
     echo "$(t "-d/--days must be a positive integer" "-d/--days 应为正整数"): $DAYS" >&2; exit 1
+fi
+if ! echo "$BATCH_SIZE" | grep -qE '^[0-9]{1,7}$'; then
+    echo "$(t "-b/--batch-size must be a whole number" "-b/--batch-size 应为非负整数"): $BATCH_SIZE" >&2; exit 1
 fi
 if [ -n "$DAYS" ] && [ -n "$SINCE" ]; then
     t "-d/--days and -t/--since cannot be used together" "-d/--days 与 -t/--since 不能同时使用" >&2; echo >&2; exit 1
@@ -366,7 +377,7 @@ record_done() {
     mv -f "$tmp" "$RETRY_LIST"
 }
 
-cleanup_tmp() { rm -f "$CAND" "$CAND.new" "$ONLY_LIST"; }
+cleanup_tmp() { rm -f "$CAND" "$CAND.new" "$ONLY_LIST" "$OUT/.doc2kb_watch_run.$$"; }
 trap cleanup_tmp EXIT
 
 if [ "$DRYRUN" = "1" ]; then
@@ -389,16 +400,39 @@ if [ "$N_NEW" -eq 0 ]; then
 fi
 
 # ---------------- this run's incremental md ----------------
+# name_taken NAME: an earlier run wrote NAME.md or its volumes (NAME-01.md, NAME-001.md, ...)
+name_taken() {
+    local f
+    [ -e "$OUT/$1.md" ] && return 0
+    for f in "$OUT/$1"-01.md "$OUT/$1"-0*1.md; do
+        [ -e "$f" ] && return 0
+    done
+    return 1
+}
 NAME="${SRC_TAG}$(date '+%Y%m%d')_${SUFFIX}"
-if [ -e "$OUT/${NAME}.md" ]; then
+if name_taken "$NAME"; then
     NAME="${SRC_TAG}$(date '+%Y%m%d-%H%M')_${SUFFIX}"
 fi
 
+# Started by the browser interface (DOC2KB_PROGRESS=1), the core's progress lines are passed on
+# as they come, so the page can show them; otherwise the output is only collected.
+RUN_LOG="$OUT/.doc2kb_watch_run.$$"
 # shellcheck disable=SC2086  # NOIMG and NOINLINE are empty or one option each
-RUN_OUT=$(python3 "$CORE" --batch "$SRC" -o "$OUT" \
-    --time-basis newest --since "$SINCE" --only "$ONLY_LIST" --lang "$UI_LANG" \
-    --merge --merge-name "$NAME" --fp-db "$FP_DB" $NOIMG $NOINLINE 2>&1)
-RC=$?
+if [ "${DOC2KB_PROGRESS:-}" = "1" ]; then
+    python3 "$CORE" --batch "$SRC" -o "$OUT" \
+        --time-basis newest --since "$SINCE" --only "$ONLY_LIST" --lang "$UI_LANG" \
+        --merge --merge-name "$NAME" --fp-db "$FP_DB" --batch-size "$BATCH_SIZE" $NOIMG $NOINLINE 2>&1 \
+        | tee "$RUN_LOG" | while IFS= read -r line; do
+              case "$line" in '['[0-9]*|BATCH$'\t'*) printf '%s\n' "$line" ;; esac
+          done
+    RC=${PIPESTATUS[0]}
+    RUN_OUT=$(cat "$RUN_LOG" 2>/dev/null)
+else
+    RUN_OUT=$(python3 "$CORE" --batch "$SRC" -o "$OUT" \
+        --time-basis newest --since "$SINCE" --only "$ONLY_LIST" --lang "$UI_LANG" \
+        --merge --merge-name "$NAME" --fp-db "$FP_DB" --batch-size "$BATCH_SIZE" $NOIMG $NOINLINE 2>&1)
+    RC=$?
+fi
 
 ELAPSED=$(( $(date +%s) - NOW_EPOCH ))
 
@@ -427,6 +461,19 @@ for pair in "$REPORT_FILE:$REPORT_OUT" "$IMGLIST_FILE:$IMGLIST_OUT"; do
     [ -f "$from" ] && mv -f "$from" "$to"
 done
 
+# what was written: NAME.md, or volumes NAME-01.md ... with an index of all volumes
+N_VOL=0; LAST_VOL=""
+for f in "$OUT/${NAME}"-[0-9]*.md; do
+    [ -e "$f" ] && { N_VOL=$((N_VOL + 1)); LAST_VOL="$(basename "$f")"; }
+done
+if [ "$N_VOL" -eq 1 ] && [ ! -e "$OUT/${NAME}.md" ]; then
+    WROTE="$LAST_VOL"
+elif [ "$N_VOL" -gt 1 ] && [ ! -e "$OUT/${NAME}.md" ]; then
+    WROTE="$(basename "$(printf '%s\n' "$OUT/${NAME}"-[0-9]*.md | head -1)") $(t "…" "……") $LAST_VOL"
+else
+    WROTE="${NAME}.md"
+fi
+
 # figures from the core's STAT lines
 CHARS=$(stat_of chars "$RUN_OUT")
 WRITTEN=$(stat_of written "$RUN_OUT")
@@ -439,10 +486,10 @@ MOVED=${MOVED:-0}
 
 if [ "${WRITTEN:-}" = "0" ] && [ "$MOVED" = "0" ]; then
     # only retried files that failed again: no empty incremental file; the report stays (with reasons)
-    rm -f "$OUT/${NAME}.md" "$OUT/$IMGLIST_OUT"
+    rm -f "$OUT/${NAME}.md" "$OUT/${NAME}"-[0-9]*.md "$OUT/${NAME}$(t "-index" "-索引").md" "$OUT/$IMGLIST_OUT"
     log "$(t "no new documents; only ${FAILN:-0} retried files failed again" "无新增文档，仅重试失败 ${FAILN:-0} 份")$LP$(t "report" "报告")$(t ": " "：")$REPORT_OUT$(t ", " "，")$(t "mode" "模式")=$MODE $(t "from" "起点")=$SINCE $(t "time" "耗时")=${ELAPSED}s$RP"
 else
-    log "$(t "wrote" "生成") ${NAME}.md$LP$(t "mode" "模式")=$MODE $(t "from" "起点")=$SINCE $(t "documents" "文档")=${N_NEW} $(t "duplicates" "重复略去")=${DEDUP:-0} $(t "moved" "位置变动略去")=${MOVED} $(t "characters" "字符")=${CHARS:-0} $(t "images" "图片")=${IMGS:-0} $(t "failed" "失败")=${FAILN:-0} $(t "time" "耗时")=${ELAPSED}s$RP"
+    log "$(t "wrote" "生成") ${WROTE}$LP$(t "mode" "模式")=$MODE $(t "from" "起点")=$SINCE $(t "documents" "文档")=${N_NEW} $(t "duplicates" "重复略去")=${DEDUP:-0} $(t "moved" "位置变动略去")=${MOVED} $(t "characters" "字符")=${CHARS:-0} $(t "images" "图片")=${IMGS:-0} $(t "failed" "失败")=${FAILN:-0} $(t "time" "耗时")=${ELAPSED}s$RP"
 fi
 
 # move the watermark (after any successful run, so plain runs carry on); failed files go to the retry list
@@ -453,14 +500,14 @@ if [ "${WRITTEN:-}" = "0" ] && [ "$MOVED" = "0" ]; then
     t "No new documents; the ${FAILN:-0} retried files failed again, see $OUT/$REPORT_OUT" \
       "无新增文档；重试的 ${FAILN:-0} 份仍失败，详见 $OUT/$REPORT_OUT"; echo
 elif [ "$MOVED" -gt 0 ] 2>/dev/null; then
-    t "Wrote $OUT/${NAME}.md (${N_NEW} documents, ${CHARS:-0} characters; ${MOVED} more were only moved and are listed with their paths; ${DEDUP:-0} duplicates left out)" \
-      "已生成: $OUT/${NAME}.md（${N_NEW} 份文档，${CHARS:-0} 字符；另有 ${MOVED} 份正文已入库、仅位置变动，只列路径对照；重复略去 ${DEDUP:-0} 份）"; echo
+    t "Wrote $OUT/${WROTE} (${N_NEW} documents, ${CHARS:-0} characters; ${MOVED} more were only moved and are listed with their paths; ${DEDUP:-0} duplicates left out)" \
+      "已生成: $OUT/${WROTE}（${N_NEW} 份文档，${CHARS:-0} 字符；另有 ${MOVED} 份正文已入库、仅位置变动，只列路径对照；重复略去 ${DEDUP:-0} 份）"; echo
 elif [ -n "$DEDUP" ] && [ "$DEDUP" -gt 0 ] 2>/dev/null; then
-    t "Wrote $OUT/${NAME}.md (${N_NEW} documents, ${CHARS:-0} characters; ${DEDUP} duplicates left out)" \
-      "已生成: $OUT/${NAME}.md（${N_NEW} 份文档，${CHARS:-0} 字符；另有 ${DEDUP} 份重复已略去）"; echo
+    t "Wrote $OUT/${WROTE} (${N_NEW} documents, ${CHARS:-0} characters; ${DEDUP} duplicates left out)" \
+      "已生成: $OUT/${WROTE}（${N_NEW} 份文档，${CHARS:-0} 字符；另有 ${DEDUP} 份重复已略去）"; echo
 else
-    t "Wrote $OUT/${NAME}.md (${N_NEW} documents, ${CHARS:-0} characters)" \
-      "已生成: $OUT/${NAME}.md（${N_NEW} 份文档，${CHARS:-0} 字符）"; echo
+    t "Wrote $OUT/${WROTE} (${N_NEW} documents, ${CHARS:-0} characters)" \
+      "已生成: $OUT/${WROTE}（${N_NEW} 份文档，${CHARS:-0} 字符）"; echo
 fi
 exit 0
 

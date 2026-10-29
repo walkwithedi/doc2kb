@@ -511,8 +511,10 @@ shrank.
 - **Paths** are chosen in a folder list the service provides (or typed): conversions need the real
   paths, which a browser file picker does not give. A path typed while the list loads is kept.
 - **One task at a time**, run as a child process with the same options as the command line. Progress
-  comes from the converter's `[i/n]` lines and its `BATCH<TAB>k<TAB>n` lines (shown as "batch k of n"), or
-  the number of incremental tasks done; the result from exit codes, STAT and FAILED lines and the reports.
+  comes from the converter's `[i/n]` lines and its `BATCH<TAB>k<TAB>n` lines (shown as "batch k of n");
+  an incremental tasks run shows "task k of n" with its name, always, even for one task, and under it
+  the batch and document of that task's conversion (until the conversion starts: that the changed
+  documents are being found); the result from exit codes, STAT and FAILED lines and the reports.
 - **Large folders**: the folder batch takes "files per batch" (5.1a, default 1000). When every scanned
   file is ticked the list of files is not sent (the converter finds the same files); requests may be up to
   32 MB. A long file list is built in steps so the page keeps responding, and the start button waits for
@@ -591,7 +593,13 @@ last run would be processed twice. Also record the last run's "path + change tim
 
 **Output behaviour**:
 
-- each run merges what is new into **one** dated file
+- each run merges what is new into **one** dated file; more files than one batch (`-b N`, default 1000,
+  5.1a) give dated volumes `…-01.md`, `…-02.md` and an index of all volumes. A name counts as taken when
+  the plain file or a first volume exists, so a second run on the same day gets the time in its name and
+  never overwrites earlier volumes; a run interrupted earlier that day reuses its name and continues with
+  its first unfinished batch
+- started by the browser interface (environment `DOC2KB_PROGRESS=1`), the script passes the converter's
+  `[i/n]` and `BATCH` lines on as they come; otherwise (cron) its output stays the short summary
 - **nothing new: exit quietly**, write no empty file, exit code success
 - a run log records each run's mode, start, number scanned, number new, output file and duration;
   **a run with nothing new also gets a line** (to show the schedule really runs)

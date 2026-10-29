@@ -46,7 +46,7 @@ Double-click `双击运行.desktop`, or run `./doc2kb.sh` without arguments (or 
 
 - **Folder batch**: choose the source folder (type the path or use "Browse…"), optionally a date, and press "Scan"; untick the files you do not want; check the output folder (default `<source>/_doc2kb`, `_知识库` in Chinese) and the options, then "Start". The result shows the summary and the report; "Open output folder" opens it.
 - **Chosen files**: add documents or archives from one or more folders and start; they are always converted again (you are asked before md files of the same name are replaced).
-- **Incremental tasks**: add, edit and delete tasks (name, source folder, output folder), preview them, run the ticked ones or all. A task that never ran takes the documents changed in the last N days (default 30, set on the page). Tasks live in `~/.config/doc2kb/watch_tasks.conf`, the same file earlier versions used.
+- **Incremental tasks**: add, edit and delete tasks (name, source folder, output folder), preview them, run the ticked ones or all. A task that never ran takes the documents changed in the last N days (default 30, set on the page). Tasks live in `~/.config/doc2kb/watch_tasks.conf`, the same file earlier versions used. While a task runs the page shows which task, its batch and the document being converted.
 - **Duplicate clean-up**: pick a merged or incremental md, run a dry run, check the report, then clean up (the original is backed up first).
 
 `.msg` files are listed and skipped.
@@ -80,6 +80,7 @@ Options (each long option has a one-letter short form; type the short ones):
 | `-i` / `-I` | export / do not export pictures (default: text only, faster) |
 | `-E` | do not expand embedded workbooks |
 | `-x SUFFIX` | output name suffix (default `incremental`, `增量` in Chinese) |
+| `-b N` | files per batch (default 1000; 0 = one batch); more files are written as volumes `…-01.md`, `…-02.md` with an index of all volumes |
 | `-n` | only list what would be processed (dry run) |
 | `-h` | help |
 

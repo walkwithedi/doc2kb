@@ -251,6 +251,9 @@ class Job:
         self.current = ''
         self.batch = 0
         self.batches = 0
+        self.task = 0           # tasks run: the task running now, of how many, its name
+        self.tasks = 0
+        self.task_name = ''
         self.result = None
         self.tmpdir = None
         self.steps = []
@@ -279,8 +282,10 @@ class Job:
                 if self.cancelled:
                     break
                 step['first'] = len(self.lines)
-                if len(self.steps) > 1:
-                    self.cur, self.total, self.current = i, len(self.steps), step['name']
+                # document progress ([i/n], BATCH lines) is counted per step
+                self.cur = self.total = self.batch = self.batches = 0
+                self.current = ''
+                self.task, self.tasks, self.task_name = i, len(self.steps), step['name']
             if step.get('argv'):
                 rc = self._run_step(step['argv'])
             else:
@@ -306,7 +311,8 @@ class Job:
 
     def _run_step(self, argv):
         log.info('%s step: %s', self.kind, log_safe(argv))
-        env = dict(os.environ, PYTHONIOENCODING='utf-8', DOC2KB_LANG=LANG)
+        # DOC2KB_PROGRESS: doc2kb.sh passes the converter's progress lines on as they come
+        env = dict(os.environ, PYTHONIOENCODING='utf-8', DOC2KB_LANG=LANG, DOC2KB_PROGRESS='1')
         try:
             # a session of its own, so a cancel reaches doc2kb.sh and the converter it starts
             proc = subprocess.Popen(argv, env=env, stdin=subprocess.DEVNULL,
@@ -463,6 +469,7 @@ class Job:
                     'rc': self.rc, 'started': self.started, 'finished': self.finished,
                     'cur': self.cur, 'total': self.total, 'current': self.current,
                     'batch': self.batch, 'batches': self.batches,
+                    'task': self.task, 'tasks': self.tasks, 'task_name': self.task_name,
                     'output': '\n'.join(shown[-tail:]),
                     'result': self.result if not self.running else None}
 

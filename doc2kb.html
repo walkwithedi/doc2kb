@@ -433,6 +433,7 @@ const S = {
     task_del_confirm: 'Delete the task "{0}"?\n\nOnly the task is removed; its source folder, output folder and md files stay.',
     task_del_failed: 'Deleting failed: {0}.',
     tasks_running: 'Task {0} of {1}: {2}',
+    task_scanning: 'Finding the changed documents… (the document count appears once the conversion starts)',
     tasks_done: '{0} tasks run.', tasks_done_preview: 'Preview of {0} tasks; nothing was written.',
     tasks_some_failed: '{0} of {1} tasks failed; see the outcome of each below.',
     tasks_cancelled: 'Cancelled; tasks not reached did not run.',
@@ -553,6 +554,7 @@ const S = {
     task_del_confirm: '确定删除任务「{0}」？\n\n只删除任务配置，源目录、输出目录和已生成的 md 文件都不受影响。',
     task_del_failed: '删除失败：{0}。',
     tasks_running: '第 {0}/{1} 个任务：{2}',
+    task_scanning: '正在查找有变动的文档……（开始转换后显示逐份进度）',
     tasks_done: '已执行 {0} 个任务。', tasks_done_preview: '已预览 {0} 个任务，没有写出任何文件。',
     tasks_some_failed: '{1} 个任务中有 {0} 个失败，各任务结果见下表。',
     tasks_cancelled: '已取消，尚未轮到的任务没有执行。',
@@ -841,6 +843,18 @@ function renderConversion(card, job) {
   q('.r-open').hidden = !(status && status.tools['xdg-open']);
   say(q('.r-open-status'), '');
   q('.r-status').scrollIntoView({block: 'nearest'});
+}
+// tasks: which task runs, and within it the converter's batch and document once it has started
+function renderTaskProgress(job) {
+  const prog = $('tasksProg'), head = t('tasks_running', job.task, job.tasks, job.task_name);
+  if (!job.total) {
+    prog.removeAttribute('value');
+    say('tasksStatus', head + '\n' + t('task_scanning'), 'info');
+    return;
+  }
+  prog.value = Math.floor((job.cur - 1) * 100 / job.total);
+  say('tasksStatus', head + '\n' + (job.batches > 1 ? t('progress_batch', job.batch, job.batches, job.cur, job.total, job.current)
+                                                     : t('progress', job.cur, job.total, job.current)), 'info');
 }
 function renderProgress(prog, line, job) {
   if (!job.total) { say(line, t('preparing'), 'info'); prog.removeAttribute('value'); return; }
@@ -1219,10 +1233,7 @@ function poll() {
       if (!jobRunning) setBusy(true, job.kind);
       if (job.kind === 'run') renderProgress($('runProg'), $('runStatus'), job);
       else if (job.kind === 'files') renderProgress($('filesProg'), $('filesStatus'), job);
-      else if (job.kind === 'tasks' && job.total) {
-        $('tasksProg').value = Math.floor((job.cur - 1) * 100 / job.total);
-        say('tasksStatus', t('tasks_running', job.cur, job.total, job.current), 'info');
-      }
+      else if (job.kind === 'tasks' && job.tasks) renderTaskProgress(job);
       return;
     }
     clearInterval(pollTimer); pollTimer = null;

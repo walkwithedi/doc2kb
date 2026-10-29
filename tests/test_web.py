@@ -426,6 +426,22 @@ class JobTest(unittest.TestCase):
         self.assertEqual(snap["result"]["written_md"], 1)
         self.assertIsNone(snap["result"]["report"])
 
+    def test_task_progress_with_one_task(self):
+        script = ("import time\nprint('[1/4] a.docx', flush=True)\nprint('BATCH', 2, 3, sep=chr(9), flush=True)\n"
+                  "print('[3/4] c.docx', flush=True)\ntime.sleep(60)\n")
+        job = web.Job()
+        job.start("tasks", {"names": ["one"], "dry_run": False}, None,
+                  steps=[{"name": "one", "argv": [sys.executable, "-c", script], "first_run": False,
+                          "dry_run": False, "log": ""}])
+        end = time.time() + 10
+        while job.snapshot()["cur"] < 3 and time.time() < end:
+            time.sleep(0.1)
+        snap = job.snapshot()
+        self.assertEqual((snap["task"], snap["tasks"], snap["task_name"]), (1, 1, "one"))
+        self.assertEqual((snap["cur"], snap["total"], snap["batch"], snap["batches"]), (3, 4, 2, 3))
+        self.assertTrue(job.cancel())
+        self.wait(job)
+
     def test_stale_report_not_shown(self):
         rp = os.path.join(self.tmp, web.core.T("report_file"))
         with open(rp, "w", encoding="utf-8") as f:
