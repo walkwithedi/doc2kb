@@ -51,6 +51,8 @@
 
 `.msg` 文件会列出并跳过。
 
+文件多的目录按批转换（「每批文档数」，默认 1000，填 0 表示不分批），几万份文档也能匀速跑完。合并输出时每批写成一卷：`名称-01.md`、`名称-02.md`……，另有 `名称-索引.md` 写明每份文档在哪一卷；去重跨所有批进行。合并运行中途取消后，已完成的批会保留：用相同的目录和选项再次开始，从第一个未完成的批接着做（也可以选「从第一批重新开始」）。刷新页面后，正在运行或最近一次的任务会连同设置、进度和结果一起恢复显示。
+
 不勾选「导出图片」时不导出图片。服务只监听 127.0.0.1，网址带一次性令牌；页面全部关闭几秒后自动退出，点「退出」立即结束；有任务运行时等任务结束再退出。路径在服务提供的目录列表里选择，而不是用浏览器的选文件框，因为转换需要真实路径。想放到桌面时放「双击运行」的链接，不要复制。服务日志写在同目录的 `doc2kb_web.log`（该目录不可写时写到 `~/.cache/doc2kb/`）。
 
 ### 命令行增量模式（定时任务）
@@ -87,13 +89,14 @@ crontab 示例（每天 18:30 跑一次，路径一律写绝对路径；需要�
 
 ```bash
 python3 doc2kb_core.py --batch 源目录 -o 输出目录 --merge --lang zh   # 批量，合并成单个 md
+python3 doc2kb_core.py --batch 源目录 -o 输出目录 --merge --batch-size 500 --lang zh   # 每 500 个文件一卷
 python3 doc2kb_core.py --files 清单.txt -o 输出目录 --lang zh          # 处理清单中列出的文件
 python3 doc2kb_core.py -h                                              # 查看全部参数
 ```
 
 其他工具可以导入 `doc2kb_core.py`，通过 `build_parser()` 和 `run_batch()` / `run_files()` 的 `writer` 参数写出自己的产物；接口见 SPEC.md 第 5.6 节。
 
-批量运行除了给人看的汇总，还输出 `STAT<TAB>键<TAB>值` 行（new、kept、failed、written、dup、moved、chars、images）和 `FAILED<TAB>路径` 行，供脚本读取。
+批量运行除了给人看的汇总，还输出 `STAT<TAB>键<TAB>值` 行（new、kept、failed、written、dup、moved、chars、images）、每批开始时的 `BATCH<TAB>批号<TAB>总批数` 行和 `FAILED<TAB>路径` 行，供脚本读取。分批、分卷以及合并运行如何接着做，见 SPEC.md 第 5.1a 节（`--force` 从头开始）。
 
 ### 清理重复内容（目录移动后的大增量文件）
 

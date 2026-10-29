@@ -50,10 +50,12 @@ PING_TIMEOUT = 600      # seconds without a heartbeat before a page counts as cl
 OPEN_TIMEOUT = 120      # seconds to wait for the first page before exiting
 BYE_GRACE = 5           # seconds after the last page closed; a reloaded page registers again meanwhile
 CANCEL_WAIT = 10        # seconds the core gets to clean up after an interrupt
-MAX_BODY = 4 * 1024 * 1024
+MAX_BODY = 32 * 1024 * 1024  # a ticked list of tens of thousands of long paths fits
 MAX_LIST = 5000         # entries shown for one folder
 OUTPUT_TAIL = 200       # lines of core output kept for the page
 PROGRESS_RE = re.compile(r'^\[(\d+)/(\d+)\]\s*(.*)$')
+BATCH_RE = re.compile(r'^BATCH\t(\d+)\t(\d+)$')
+MACHINE_LINES = ('OK\t', 'LEGACY\t', 'FILTERED\t', 'BATCH\t')   # not shown on the page
 DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 
 # messages from this program, (English, Chinese)
@@ -84,6 +86,8 @@ MESSAGES = {
     'busy': ('another task is running; wait for it to finish or cancel it',
              '已有任务正在运行，请等它结束或先取消'),
     'no_files': ('no file ticked', '没有勾选任何文件'),
+    'bad_batch_size': ('files per batch must be a whole number from 0 to 1000000',
+                       '每批文档数须为 0 到 1000000 的整数'),
     'no_job': ('nothing is running', '没有正在运行的任务'),
     'core_missing': ('doc2kb_core.py not found next to doc2kb_web.py',
                      '找不到同目录的 doc2kb_core.py'),
@@ -245,6 +249,8 @@ class Job:
         self.cur = 0
         self.total = 0
         self.current = ''
+        self.batch = 0
+        self.batches = 0
         self.result = None
         self.tmpdir = None
         self.steps = []
@@ -330,6 +336,9 @@ class Job:
             m = PROGRESS_RE.match(line)
             if m:
                 self.cur, self.total, self.current = int(m.group(1)), int(m.group(2)), m.group(3)
+            m = BATCH_RE.match(line)
+            if m:
+                self.batch, self.batches = int(m.group(1)), int(m.group(2))
 
     def cancel(self):
         with self.lock:
@@ -449,10 +458,11 @@ class Job:
             if self.kind is None:
                 return {'state': 'idle'}
             state = 'running' if self.running else ('cancelled' if self.cancelled else 'done')
-            shown = [l for l in self.lines if not l.startswith(('OK\t', 'LEGACY\t', 'FILTERED\t'))]
+            shown = [l for l in self.lines if not l.startswith(MACHINE_LINES)]
             return {'kind': self.kind, 'state': state, 'params': self.params,
                     'rc': self.rc, 'started': self.started, 'finished': self.finished,
                     'cur': self.cur, 'total': self.total, 'current': self.current,
+                    'batch': self.batch, 'batches': self.batches,
                     'output': '\n'.join(shown[-tail:]),
                     'result': self.result if not self.running else None}
 
@@ -544,16 +554,25 @@ def run_plan(data):
     since = (data.get('since') or '').strip()
     if since and not DATE_RE.match(since):
         raise ValueError(M('bad_date'))
-    only = [r for r in (data.get('only') or []) if isinstance(r, str) and r.strip()]
-    only, skipped_pdf = split_pdf(only)
-    if not only:
-        raise ValueError(M('no_files'))
+    size = data.get('batch_size', core.DEFAULT_BATCH_SIZE)
+    if isinstance(size, bool) or not isinstance(size, int) or not 0 <= size <= 1000000:
+        raise ValueError(M('bad_batch_size'))
+    # every scanned file ticked: no list, which can be large; the core finds the same files
+    if data.get('all'):
+        only, skipped_pdf, count = None, [], data.get('count') if isinstance(data.get('count'), int) else 0
+    else:
+        only = [r for r in (data.get('only') or []) if isinstance(r, str) and r.strip()]
+        only, skipped_pdf = split_pdf(only)
+        if not only:
+            raise ValueError(M('no_files'))
+        count = len(only)
     merge = bool(data.get('merge'))
     params, opts = common_options(data, out, merge)
-    params.update({'kind': 'run', 'src': src, 'since': since,
-                   'force': bool(data.get('force')) and not merge,
-                   'count': len(only), 'skipped_pdf': skipped_pdf, 'skipped_legacy': []})
-    argv = [sys.executable, '-u', CORE, '--batch', src] + opts
+    # force: one file per document, convert again; merged, drop an unfinished run's batches
+    params.update({'kind': 'run', 'src': src, 'since': since, 'force': bool(data.get('force')),
+                   'batch_size': size, 'all': only is None,
+                   'count': count, 'skipped_pdf': skipped_pdf, 'skipped_legacy': []})
+    argv = [sys.executable, '-u', CORE, '--batch', src, '--batch-size', str(size)] + opts
     if since:
         argv += ['--since', since]
     if params['force']:
@@ -591,22 +610,30 @@ def run_check(params):
     """What a run would replace, for the confirmation on the page."""
     out = params['out']
     replace, existing = [], 0
+    unfinished = False
     if params['merge']:
-        name = core.safe_name(os.path.basename(params['src'])) + '.md'
-        if os.path.isfile(os.path.join(out, name)):
-            replace.append(name)
+        stem = core.safe_name(os.path.basename(params['src']))
+        size = params.get('batch_size') or 0
+        n = -(-params['count'] // size) if size and params['count'] > size else 1
+        names = core.volume_names(stem, n)
+        if n > 1:
+            names.append(stem + core.T('vol_index_suffix'))
+        replace = [x + '.md' for x in names if os.path.isfile(os.path.join(out, x + '.md'))]
+        unfinished = params['kind'] == 'run' and os.path.isfile(
+            os.path.join(out, core.WORK_DIR, core.safe_component(stem), core.STATE_FILE))
     elif params['kind'] == 'files':
         # chosen files always write their md again; archives are named after their members
         plain = [{'rel': os.path.basename(p), 'path': p} for p in params['files']
                  if file_kind(os.path.basename(p)) == 'doc']
         replace = sorted(b + '.md' for b in core.base_names(plain)
                          if os.path.isfile(os.path.join(out, b + '.md')))
-    elif params['force']:
+    elif params['force'] and not params['merge']:
         try:
             existing = sum(1 for n in os.listdir(out) if n.endswith('.md') and not n.startswith('_'))
         except OSError:
             existing = 0
     return {'replace': replace, 'existing_md': existing, 'out': out, 'count': params['count'],
+            'unfinished': unfinished,
             'skipped_pdf': params['skipped_pdf'], 'skipped_legacy': params['skipped_legacy']}
 
 
@@ -988,10 +1015,11 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(409, {'error': M('busy')})
                 return
             tmp = tempfile.mkdtemp(prefix='doc2kb_web_')
-            list_file = os.path.join(tmp, 'list.txt')
-            with open(list_file, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(lines) + '\n')
-            argv += [list_opt, list_file]
+            if lines is not None:
+                list_file = os.path.join(tmp, 'list.txt')
+                with open(list_file, 'w', encoding='utf-8') as f:
+                    f.write('\n'.join(lines) + '\n')
+                argv += [list_opt, list_file]
             if not job.start(params['kind'], params, argv, tmpdir=tmp):
                 shutil.rmtree(tmp, ignore_errors=True)
                 self.send_json(409, {'error': M('busy')})

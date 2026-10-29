@@ -149,6 +149,45 @@ class WebTest(unittest.TestCase):
         st, check = self.srv.request("POST", "/api/check", body=body)
         self.assertEqual(check["replace"], ["src.md"])
 
+    def test_run_all_in_batches(self):
+        self.srv.request("POST", "/api/scan", body={"src": self.src})
+        files = self.srv.wait_job()["result"]["files"]
+        out = os.path.join(self.tmp, "out")
+        # every file ticked: no list is sent; two files per batch, so the merged text comes in volumes
+        body = {"src": self.src, "out": out, "all": True, "count": len(files), "merge": True, "batch_size": 2}
+        st, check = self.srv.request("POST", "/api/check", body=body)
+        self.assertEqual((st, check["replace"], check["unfinished"]), (200, [], False))
+        st, _ = self.srv.request("POST", "/api/run", body=body)
+        self.assertEqual(st, 200)
+        job = self.srv.wait_job()
+        self.assertEqual((job["state"], job["rc"]), ("done", 0), job["output"])
+        n = -(-len(files) // 2)
+        self.assertEqual((job["batch"], job["batches"]), (n, n))
+        self.assertNotIn("BATCH\t", job["output"])                 # machine lines stay off the page
+        self.assertTrue(os.path.isfile(os.path.join(out, "src-01.md")))
+        self.assertTrue(os.path.isfile(os.path.join(out, "src-index.md")))
+        self.assertIn("Volumes:", job["result"]["report"])
+        # a reloaded page gets the same task back, with its settings and result
+        st, status = self.srv.request("GET", "/api/status")
+        self.assertEqual(status["job"]["params"]["out"], out)
+        self.assertEqual(status["job"]["params"]["batch_size"], 2)
+        self.assertEqual(status["job"]["result"]["stats"], job["result"]["stats"])
+        st, check = self.srv.request("POST", "/api/check", body=body)
+        self.assertIn("src-01.md", check["replace"])
+        self.assertIn("src-index.md", check["replace"])
+
+    def test_unfinished_merged_run_is_reported(self):
+        out = os.path.join(self.tmp, "out")
+        state_dir = os.path.join(out, web.core.WORK_DIR, "src")
+        os.makedirs(state_dir)
+        with open(os.path.join(state_dir, web.core.STATE_FILE), "w", encoding="utf-8") as f:
+            f.write("{}")
+        body = {"src": self.src, "out": out, "only": ["report-en.docx"], "merge": True}
+        st, check = self.srv.request("POST", "/api/check", body=body)
+        self.assertEqual((st, check["unfinished"]), (200, True))
+        st, check = self.srv.request("POST", "/api/check", body=dict(body, merge=False))
+        self.assertFalse(check["unfinished"])
+
     def test_files_run(self):
         files = [os.path.join(self.src, n) for n in ("report-en.docx", "mail-en.eml", "legacy-en.msg")]
         body = {"mode": "files", "files": files, "merge": True, "inline": True}
@@ -181,6 +220,13 @@ class WebTest(unittest.TestCase):
             st, d = self.srv.request("POST", "/api/run", body={"mode": "files", "files": files})
             self.assertEqual(st, 400, (files, d))
             self.assertNotIn("source folder", d["error"])
+
+    def test_batch_size_refusals(self):
+        body = {"src": self.src, "out": os.path.join(self.tmp, "out"), "only": ["report-en.docx"]}
+        for size in (-1, "10", 1.5, True, 1000001):
+            st, r = self.srv.request("POST", "/api/check", body=dict(body, batch_size=size))
+            self.assertEqual(st, 400, size)
+            self.assertIn("per batch", r["error"])
 
     def test_run_refusals(self):
         st, d = self.srv.request("POST", "/api/run", body={"src": self.src, "only": []})

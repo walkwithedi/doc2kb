@@ -51,6 +51,8 @@ Double-click `双击运行.desktop`, or run `./doc2kb.sh` without arguments (or 
 
 `.msg` files are listed and skipped.
 
+Large folders are converted in batches ("Files per batch", default 1000; 0 = one batch), so tens of thousands of documents run at a steady pace. In merged mode each batch becomes a volume, `<name>-01.md`, `<name>-02.md`, …, with `<name>-index.md` naming the volume of each document; duplicates are found across all batches. A cancelled merged run keeps its finished batches: start it again with the same folders and options and it continues with the first unfinished batch (or choose "Start again from the first batch"). Reloading the page shows the running or latest task again with its settings, progress and result.
+
 Pictures are not exported unless "Export images" is ticked. The service listens on 127.0.0.1 only, with a one-time token in the address, and exits a few seconds after the last page is closed; "Quit" stops it at once. A run in progress is finished first. Paths are chosen in a folder list the service provides, not with the browser's file picker, because conversions need the real paths. To keep the launcher on the desktop, put a link to it there, not a copy. The service logs to `doc2kb_web.log` next to it (or `~/.cache/doc2kb/` when that folder is read-only).
 
 ### Incremental command line (cron)
@@ -87,6 +89,7 @@ Exit codes: 0 done (also when nothing was new), 1 option or environment error, 2
 
 ```bash
 python3 doc2kb_core.py --batch SOURCE -o OUTPUT --merge   # a folder, merged into one md
+python3 doc2kb_core.py --batch SOURCE -o OUTPUT --merge --batch-size 500   # volumes of 500 files
 python3 doc2kb_core.py --files list.txt -o OUTPUT          # the files named in a list
 python3 doc2kb_core.py report.docx -o OUTPUT --lang zh     # one file, Chinese labels
 python3 doc2kb_core.py -h                                  # every option
@@ -94,7 +97,7 @@ python3 doc2kb_core.py -h                                  # every option
 
 Other tools can import `doc2kb_core.py` and write output of their own through `build_parser()` and the `writer` argument of `run_batch()` / `run_files()`; SPEC.md, section 5.6, describes the interface.
 
-Besides the human summary, batch runs print `STAT<TAB>key<TAB>value` lines (new, kept, failed, written, dup, moved, chars, images) and `FAILED<TAB>path` lines for scripts.
+Besides the human summary, batch runs print `STAT<TAB>key<TAB>value` lines (new, kept, failed, written, dup, moved, chars, images) `BATCH<TAB>k<TAB>n` at the start of each batch, and `FAILED<TAB>path` lines for scripts. SPEC.md, section 5.1a, describes batches, volumes and how an unfinished merged run continues (`--force` starts it again).
 
 ### Cleaning up duplicates after a folder move
 

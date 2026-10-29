@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -463,6 +464,23 @@ class LibraryTest(Tmp):
         rows = [ln.split("\t") for ln in read(db).splitlines() if ln and not ln.startswith("#")]
         self.assertTrue(rows and all(r[-1] == "custom-" + r[-2] for r in rows), rows)
 
+    def test_writer_per_volume(self):
+        src = self.p("src")
+        os.makedirs(src)
+        for i in range(5):
+            fx.docx(self.p("src", "doc%d.docx" % i), english=True, intro="Volume text %d." % i)
+        args = core.build_parser().parse_args(["--batch", src, "-o", self.p("out"), "--merge", "--no-images",
+                                               "--batch-size", "2"])
+        names = []
+
+        def write(entries, md_dir, ts, src_root, out_name):
+            names.append((out_name, sorted(e["rel"] for e in entries), all(e["body"] for e in entries)))
+            return None, {}, None
+        self.assertEqual(core.run_batch(args, writer=write), 0)
+        self.assertEqual(names, [("src-01", ["doc0.docx", "doc1.docx"], True),
+                                 ("src-02", ["doc2.docx", "doc3.docx"], True),
+                                 ("src-03", ["doc4.docx"], True)])
+
     def test_files_with_writer(self):
         src = self.p("src")
         made = fx.build_all(src, english=True)
@@ -472,6 +490,93 @@ class LibraryTest(Tmp):
         self.assertEqual(len(calls["entries"]), 1)
         self.assertTrue(os.path.isfile(calls["finish"]))
         self.assertTrue(any(n.endswith("_custom.md") for n in os.listdir(self.p("out"))))
+
+
+class BatchTest(Tmp):
+    """--batch-size: volumes, duplicates across batches, continuing an unfinished merged run."""
+
+    def make(self, n):
+        src = self.p("src")
+        os.makedirs(src, exist_ok=True)
+        for i in range(n):
+            fx.docx(self.p("src", "doc%02d.docx" % i), english=True, intro="Text of document %d." % i)
+        return src
+
+    def args(self, src, *extra):
+        return [sys.executable, CORE, "--batch", src, "-o", self.p("out"), "--merge", "--merge-name", "kb",
+                "--no-images", "--batch-size", "3", *extra]
+
+    def test_volumes_and_duplicates_across_batches(self):
+        src = self.make(7)
+        # the text of doc00 again, other bytes and a newer document time, in the last batch
+        fx.docx(self.p("src", "zz-copy.docx"), english=True, intro="Text of document 0.",
+                modified="2026-05-01T00:00:00Z")
+        p = run(self.args(src))
+        names = sorted(os.listdir(self.p("out")))
+        self.assertEqual(names, ["_batch-report.txt", "_image-list.md", "kb-01.md", "kb-02.md", "kb-03.md",
+                                 "kb-index.md"])
+        self.assertIn("3 volumes: kb-01.md … kb-03.md", p.stdout)
+        self.assertEqual(stats(p.stdout)["dup"], 1)
+        self.assertNotIn("# doc00\n", read(self.p("out", "kb-01.md")))    # the newer copy is kept
+        self.assertIn("# zz-copy\n", read(self.p("out", "kb-03.md")))
+        self.assertIn("doc00.docx", read(self.p("out", "kb-03.md")))       # the note on the other copy
+        index = read(self.p("out", "kb-index.md"))
+        self.assertIn("| zz-copy.md | kb-03.md |", index)
+        self.assertIn("| doc03.md | kb-02.md |", index)
+        self.assertIn("Volumes: 3 of up to 3 documents each", read(self.p("out", "_batch-report.txt")))
+        self.assertFalse(os.path.exists(self.p("out", core.WORK_DIR)))
+
+    def test_one_batch_keeps_the_plain_name(self):
+        src = self.make(3)
+        run(self.args(src))
+        self.assertEqual(sorted(os.listdir(self.p("out"))), ["_batch-report.txt", "_image-list.md", "kb.md"])
+
+    def test_continue_unfinished_run(self):
+        src = self.make(9)
+        env = dict(os.environ, PYTHONIOENCODING="utf-8", LOG_LEVEL="ERROR")
+        p = subprocess.Popen(self.args(src), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+                             encoding="utf-8", env=env)
+        for line in p.stdout:
+            if line.startswith("BATCH\t2\t"):
+                p.send_signal(signal.SIGINT)
+                break
+        p.communicate(timeout=60)
+        state = json.loads(read(self.p("out", core.WORK_DIR, "kb", core.STATE_FILE)))
+        self.assertEqual([b["done"] for b in state["batches"]], [True, False, False])
+        fx.docx(self.p("src", "zz-new.docx"), english=True, intro="A document added later.")
+        r = run(self.args(src))
+        self.assertIn("batch 1/4 finished in an earlier run, kept (3 files)", r.stdout)
+        self.assertIn("Batch 2/4: 3 files", r.stdout)
+        self.assertIn("Batch 4/4: 1 files", r.stdout)
+        self.assertEqual(stats(r.stdout)["written"], 10)
+        self.assertIn("Continued an unfinished run: 1 batches (3 files) kept",
+                      read(self.p("out", "_batch-report.txt")))
+        self.assertIn("# zz-new\n", read(self.p("out", "kb-04.md")))
+        self.assertIn("# doc00\n", read(self.p("out", "kb-01.md")))       # text kept from the first run
+        self.assertFalse(os.path.exists(self.p("out", core.WORK_DIR)))
+
+    def test_plan_batches(self):
+        k = [1, 1]
+        old = [{"id": 1, "members": ["a", "b"], "keys": {"a": k, "b": k}, "done": True},
+               {"id": 2, "members": ["c", "d"], "keys": {"c": k, "d": k}, "done": True},
+               {"id": 3, "members": ["e"], "keys": {"e": k}, "done": True}]
+        now = [("a", k), ("b", k), ("c", [2, 2]), ("d", k), ("f", k), ("g", k), ("h", k)]
+        got = [(b["id"], b["members"], b["done"]) for b in core.plan_batches(old, now, 2)]
+        # unchanged: kept; changed file: done again in place; no file left: dropped; new files: at the end
+        self.assertEqual(got, [(1, ["a", "b"], True), (4, ["c", "d"], False),
+                               (5, ["f", "g"], False), (6, ["h"], False)])
+        got = [(b["members"], b["done"]) for b in core.plan_batches(old, [("a", k), ("c", k), ("d", k)], 2)]
+        self.assertEqual(got, [(["a"], False), (["c", "d"], True)])            # a file removed
+        self.assertEqual([b["members"] for b in core.plan_batches([], now, 0)], [[r for r, _ in now]])
+
+    def test_one_file_per_document(self):
+        src = self.make(5)
+        p = run([sys.executable, CORE, "--batch", src, "-o", self.p("out"), "--no-images", "--batch-size", "2"])
+        names = sorted(n for n in os.listdir(self.p("out")) if n.endswith(".md"))
+        self.assertEqual(names, ["_image-list.md", "_kb-index.md"] + ["doc%02d.md" % i for i in range(5)])
+        self.assertEqual(stats(p.stdout)["new"], 5)
+        self.assertNotIn("Batch 1/3", read(self.p("out", "_batch-report.txt")))
+        self.assertFalse(os.path.exists(self.p("out", core.WORK_DIR)))
 
 
 class ShellTest(Tmp):

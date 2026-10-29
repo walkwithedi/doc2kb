@@ -359,9 +359,41 @@ section starts with the original path, the document's last-modified time and the
 > Why: merged output is easy to hand to an AI in one go; one file per document is easier to manage.
 > Merged is the default because handing over is the main use.
 
+### 5.1a Batches and volumes
+
+A folder batch is processed in **batches** of a fixed number of files (`--batch-size`, default 1000; 0 =
+one batch). Batches are taken in processing order over the files of the run, including copies left out
+as identical bytes.
+
+- **Memory and time stay flat**: a batch's texts leave memory when it ends, and the batch report is
+  written after each batch, not after each document. A run of tens of thousands of documents takes time
+  in proportion to its size.
+- **Merged mode, more than one batch**: each batch is one **volume**, `<name>-01.md`, `<name>-02.md`, …
+  (two digits, more when needed), each with the index part of its own documents, plus an **index of all
+  volumes**, `<name>-index.md` (`-索引` in Chinese), that names the volume holding each document. A batch
+  left without a document (all duplicates, failed or moved) gives no volume. With one batch the output is
+  the single `<name>.md` as before.
+- **Duplicates across batches**: duplicate handling (3.8) and the fingerprint file (6.3) run over the whole
+  run after the last batch, so the result is the one an unbatched run gives; only the split into volumes
+  differs.
+- **Continuing an unfinished merged run**: each finished batch is saved (texts included) in a work folder
+  in the output folder, `.doc2kb_work/<name>/`, with a state file listing every batch, its files and their
+  size and modification time. The merged files are written at the end, and the work folder is removed
+  when the run finishes. A run with the same output folder and name continues from that state:
+  - a batch whose files are all still there and unchanged is kept as it is;
+  - a batch with files removed, unticked or changed is done again with the files left, keeping its place
+    and volume number; a batch with no file left is dropped;
+  - files in no earlier batch form new batches after the last one;
+  - other options (language, embedded workbooks, pictures, duplicates, contact sheets) than the unfinished
+    run's start again from the first batch, and `--force` always does;
+  - the report says how many batches and files were kept.
+- **One file per document**: the files are written as before; batches only set when the report is written
+  and when memory is released. An unfinished run continues by skipping existing output as before.
+
 ### 5.2 File names
 
-- merged: `<source folder>.md`
+- merged: `<source folder>.md`; with more than one batch `<source folder>-01.md`, `-02.md`, … and
+  `<source folder>-index.md` (5.1a)
 - per document: `<source document>.md`; clashing names get a number suffix and the report gives the
   original path
 - incremental: `<source folder>_YYYYMMDD_<suffix>.md`; a second run on the same day adds the time, as in
@@ -410,7 +442,9 @@ answers a question:
 - a clear statement that opening text and headings are extracted mechanically, not summarised
 
 **Batch report**: per document characters, tables, pictures, orphan pictures, status and original path, and
-the lists: done, skipped, failed (with reason), needing a new format, excluded by date.
+the lists: done, skipped, failed (with reason), needing a new format, excluded by date. It states the
+number of volumes and the batches kept from an unfinished run (5.1a), and is written after every batch, so
+a cancelled run keeps the list of what it finished.
 
 **Image list**: per document, orphan pictures marked and listed first.
 
@@ -429,6 +463,9 @@ duplicate handling and reports:
   pictures, document time and its source) and returns `(path, file_of, finish)`: the main output file or
   None; a map from `rel` to the output file holding that document, which fingerprint lines name; and
   `finish(report_path)` or None, called after the summary to print the writer's own lines.
+- With more than one batch (5.1a) the writer is called once per volume, with that volume's documents and
+  `out_name` carrying the volume number (`<name>-01`, …); the `file_of` maps are combined and each
+  `finish` is called in turn.
 - `doc_authors(path)` returns `(author, last modified by)` as recorded in a document: the core properties
   of docx, xlsx and pptx, the summary information of legacy Office files, the PDF Author entry (with
   pdfinfo) and the sender of a mail; an empty string where there is none.
@@ -474,19 +511,30 @@ shrank.
 - **Paths** are chosen in a folder list the service provides (or typed): conversions need the real
   paths, which a browser file picker does not give. A path typed while the list loads is kept.
 - **One task at a time**, run as a child process with the same options as the command line. Progress
-  comes from the converter's `[i/n]` lines or the number of incremental tasks done; the result from exit
-  codes, STAT and FAILED lines and the reports.
+  comes from the converter's `[i/n]` lines and its `BATCH<TAB>k<TAB>n` lines (shown as "batch k of n"), or
+  the number of incremental tasks done; the result from exit codes, STAT and FAILED lines and the reports.
+- **Large folders**: the folder batch takes "files per batch" (5.1a, default 1000). When every scanned
+  file is ticked the list of files is not sent (the converter finds the same files); requests may be up to
+  32 MB. A long file list is built in steps so the page keeps responding, and the start button waits for
+  it.
+- **Reloading the page** shows the current or latest task again: its tab, the settings it ran with
+  (folders and options; a folder batch is scanned again to list the files), its progress and cancel
+  button while it runs, and its result once it ended.
 - **Defaults**: output folder `<source>/_doc2kb` (`_知识库` in Chinese; for chosen files the folder of the
   first file), merge on, embedded workbooks expanded, **pictures not exported**, duplicates kept once.
 - **Only this run counts**: a report older than the run is never shown as its result; a program that
   fails shows its exit code and output.
 - **Files that cannot be processed do not stop the rest**: unsupported legacy formats are listed and left out; PDF
   files are left out and listed when pdftotext is missing.
-- **Confirmation** names what would be replaced: an existing merged file, the md files of chosen files,
-  or the number of md files a "convert everything again" run replaces.
+- **Confirmation** names what would be replaced: existing merged files (volumes and the index of all
+  volumes included), the md files of chosen files, or the number of md files a "convert everything again"
+  run replaces. In merged mode the same choice reads "continue an unfinished merged run" (default) or
+  "start again from the first batch"; starting again over an unfinished run is confirmed, since its
+  finished batches are deleted.
 - **Cancel** interrupts the running program and the programs it started (SIGINT first, so temporary
-  folders are removed) and states what is left: in merged mode no merged file (the report lists the
-  documents finished before); in per-document mode the md files written so far, which a later run that
+  folders are removed) and states what is left: in merged mode no merged file, but the finished batches,
+  which a later run with the same folders and options continues from (the report lists the documents
+  finished before); in per-document mode the md files written so far, which a later run that
   skips existing output reuses; incremental tasks not reached do not run.
 - **Page**: English or Chinese like the rest of the tool; works with the keyboard (arrow keys, Home and
   End move between tabs); status lines are announced to screen readers; light and dark colour schemes;
@@ -675,6 +723,10 @@ missing, what to install, or which alternative to use) instead of failing halfwa
 ### 8.2 Output structure
 
 9. Merged mode writes one file, index first and text after, with no heading level clashes
+9a. A merged run of more batches writes one volume per batch and an index of all volumes; the documents
+    and their text are those of an unbatched run, and the time per document does not grow with the run
+9b. A cancelled merged run, started again, keeps its unchanged finished batches, redoes changed ones and
+    adds new files as new batches
 10. Every picture anchor points to a path that exists
 11. With pictures skipped no picture folder is created, the anchors remain, and the image list is still
     written and says so

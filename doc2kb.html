@@ -136,10 +136,13 @@
       </div>
       <div id="browserHomeOut"></div>
       <div class="opts" data-prefix="b"></div>
-      <fieldset id="existingBox" hidden style="border:1px solid var(--line); border-radius:6px; margin:8px 0 0">
-        <legend data-t="existing_legend"></legend>
-        <div class="check"><input id="exSkip" name="existing" type="radio" checked><label for="exSkip" data-t="existing_skip"></label></div>
-        <div class="check"><input id="exRedo" name="existing" type="radio"><label for="exRedo" data-t="existing_redo"></label></div>
+      <label class="field" for="batchSize" data-t="batch_size_label"></label>
+      <input id="batchSize" type="number" min="0" max="1000000" step="1" value="1000" inputmode="numeric">
+      <p class="hint" id="batchHint"></p>
+      <fieldset id="existingBox" style="border:1px solid var(--line); border-radius:6px; margin:8px 0 0">
+        <legend id="existingLegend"></legend>
+        <div class="check"><input id="exSkip" name="existing" type="radio" checked><label for="exSkip" id="exSkipLabel"></label></div>
+        <div class="check"><input id="exRedo" name="existing" type="radio"><label for="exRedo" id="exRedoLabel"></label></div>
       </fieldset>
       <div class="actions">
         <button id="run" class="primary" type="button" data-t="run"></button>
@@ -378,8 +381,18 @@ const S = {
     opt_dups: 'Keep every copy', opt_dups_d: 'By default files with the same bytes or text are kept once, the newest.',
     existing_legend: 'Documents already converted in the output folder',
     existing_skip: 'Skip them and reuse the existing results', existing_redo: 'Convert everything again',
+    existing_legend_merge: 'If the output folder holds an unfinished merged run',
+    existing_skip_merge: 'Continue it, keeping its finished batches', existing_redo_merge: 'Start again from the first batch',
+    batch_size_label: 'Files per batch',
+    batch_hint_merge: 'Each batch is one volume (name-01.md, name-02.md, …) with an index of all volumes; a cancelled run continues with its first unfinished batch. 0 = one batch.',
+    batch_hint_single: 'The report is written after each batch and each batch\'s text leaves memory. 0 = one batch.',
+    bad_batch: 'Cannot start: files per batch must be a whole number from 0 to 1000000. Correct it and start again.',
+    confirm_restart: 'The output folder {0} holds an unfinished merged run. Its finished batches will be deleted and every document converted again. Start?',
+    rendering: 'Listing the files: {0} of {1}…',
+    restored_rescan: 'The page was reloaded: the settings of the last task are filled in. Scan again to list the files.',
     run: 'Start', starting: 'Starting…',
     progress: 'Document {0} of {1}: {2}',
+    progress_batch: 'Batch {0} of {1}, document {2} of {3}: {4}',
     progress_last: 'Last document ({0}), then the report and index are written…',
     preparing: 'Preparing…',
     confirm_replace: 'The output folder {0} already holds:\n{1}\n\nThese files will be replaced. Start?',
@@ -393,7 +406,7 @@ const S = {
     done_error: 'Conversion failed: the converter exited with code {0}. The output below shows why; correct it and start again.',
     pdf_skipped: '{0} PDF files were not processed: pdftotext (poppler-utils) is missing.',
     legacy_skipped: '{0} legacy-format files (.msg) were not processed; save them as .eml first.',
-    cancel_merged: 'Cancelled. The merged md was not written; it is written only at the end.',
+    cancel_merged: 'Cancelled. The merged md files are written only at the end; the finished batches are kept, and starting again with the same folders and options continues with the first unfinished batch.',
     cancel_merged_report: ' The report lists the documents finished before the cancel.',
     cancel_single: 'Cancelled. {0} md files were written before the cancel; with "Skip them" a later folder batch reuses them.',
     cancel_single_report: ' The report lists them.',
@@ -488,8 +501,18 @@ const S = {
     opt_dups: '保留全部副本', opt_dups_d: '默认字节或正文相同的文件只保留一份（文档时间最新的）。',
     existing_legend: '输出目录中已转换过的文档',
     existing_skip: '跳过，沿用已有结果', existing_redo: '全部重新转换',
+    existing_legend_merge: '输出目录中如有未完成的合并运行',
+    existing_skip_merge: '接着做，沿用已完成的批', existing_redo_merge: '从第一批重新开始',
+    batch_size_label: '每批文档数',
+    batch_hint_merge: '每批写成一卷（名称-01.md、名称-02.md……），另附分卷总索引；中途取消后再次开始，从第一个未完成的批接着做。填 0 表示不分批。',
+    batch_hint_single: '每批结束时写一次报告，并释放该批占用的内存。填 0 表示不分批。',
+    bad_batch: '无法开始：每批文档数须为 0 到 1000000 的整数。修正后重新开始。',
+    confirm_restart: '输出目录 {0} 中有未完成的合并运行，其中已完成的批将被删除，全部文档重新转换。确定开始？',
+    rendering: '正在列出文件：{0}/{1}……',
+    restored_rescan: '页面已刷新，已填回上次任务的设置。要处理文件，请重新扫描。',
     run: '开始', starting: '正在启动……',
     progress: '第 {0}/{1} 份：{2}',
+    progress_batch: '第 {0}/{1} 批，第 {2}/{3} 份：{4}',
     progress_last: '最后一份（{0}），随后写汇总与索引……',
     preparing: '准备中……',
     confirm_replace: '输出目录 {0} 中已有：\n{1}\n\n这些文件将被替换。确定开始？',
@@ -503,7 +526,7 @@ const S = {
     done_error: '转换失败：转换器退出码 {0}。原因见下方输出，修正后重新开始。',
     pdf_skipped: '{0} 个 PDF 未处理：缺少 pdftotext（poppler-utils）。',
     legacy_skipped: '{0} 个旧版格式文件（.msg）未处理，请先另存为 .eml。',
-    cancel_merged: '已取消。合并 md 只在最后写出，本次没有写出。',
+    cancel_merged: '已取消。合并 md 只在最后写出；已完成的批已保存，用相同的目录和选项再次开始，会从第一个未完成的批接着做。',
     cancel_merged_report: '报告记录了取消前处理完的文档。',
     cancel_single: '已取消。取消前已写出 {0} 个 md；之后「目录批量」选「跳过，沿用已有结果」会沿用它们。',
     cancel_single_report: '报告记录了这些文档。',
@@ -770,7 +793,11 @@ function syncOptions() {
     if (sheets.disabled) sheets.checked = false;
     opt(prefix, 'o-sheets-hint').textContent = !montage ? t('sheets_no_tool') : (images.checked ? t('opt_sheets_d') : t('sheets_need_images'));
   });
-  $('existingBox').hidden = opt('b', 'o-merge').checked;
+  const merged = opt('b', 'o-merge').checked;
+  $('existingLegend').textContent = t(merged ? 'existing_legend_merge' : 'existing_legend');
+  $('exSkipLabel').textContent = t(merged ? 'existing_skip_merge' : 'existing_skip');
+  $('exRedoLabel').textContent = t(merged ? 'existing_redo_merge' : 'existing_redo');
+  $('batchHint').textContent = t(merged ? 'batch_hint_merge' : 'batch_hint_single');
 }
 
 // ---------- result block of a conversion (folder batch and chosen files)
@@ -818,11 +845,14 @@ function renderConversion(card, job) {
 function renderProgress(prog, line, job) {
   if (!job.total) { say(line, t('preparing'), 'info'); prog.removeAttribute('value'); return; }
   prog.value = Math.floor((job.cur - 1) * 100 / job.total);
-  say(line, job.cur >= job.total ? t('progress_last', job.current) : t('progress', job.cur, job.total, job.current), 'info');
+  say(line, job.cur >= job.total && job.batch >= job.batches ? t('progress_last', job.current)
+    : job.batches > 1 ? t('progress_batch', job.batch, job.batches, job.cur, job.total, job.current)
+    : t('progress', job.cur, job.total, job.current), 'info');
 }
 // confirm what a run would replace; resolves to true when the run may start
 function confirmRun(body) {
   return post('/api/check', body).then(c => {
+    if (c.unfinished && body.force && !confirm(t('confirm_restart', c.out))) return false;
     if (c.replace.length) return confirm(t('confirm_replace', c.out, c.replace.join('\n')));
     if (body.force && c.existing_md) return confirm(t('confirm_redo', c.existing_md, c.out));
     return true;
@@ -839,7 +869,7 @@ function threeMonthsAgo() {
 $('since').value = threeMonthsAgo();
 $('useSince').addEventListener('change', () => { $('sinceRow').hidden = !$('useSince').checked; });
 $('src').addEventListener('input', () => {
-  scan = null;
+  scan = null; rowsPending = false;
   $('listCard').hidden = true; $('runCard').hidden = true; $('batchResult').hidden = true;
   say('scanStatus', '');
 });
@@ -866,17 +896,7 @@ function renderScan(job) {
   scan = {src: job.params.src, since: job.params.since, files: r.files};
   say('scanStatus', r.files.length ? t('scan_done', r.files.length) : (r.filtered ? t('scan_none_filtered', r.filtered) : t('scan_none')),
       r.files.length ? 'ok' : 'warn');
-  const tb = $('fileRows'); tb.textContent = '';
-  r.files.forEach((f, i) => {
-    const tr = document.createElement('tr');
-    const c0 = document.createElement('td'), box = document.createElement('input');
-    box.type = 'checkbox'; box.checked = true; box.id = 'f' + i; box.dataset.rel = f.rel;
-    box.addEventListener('change', updateTicked);
-    c0.appendChild(box);
-    const c1 = document.createElement('td'); c1.className = 'rel';
-    const lab = document.createElement('label'); lab.htmlFor = box.id; lab.textContent = f.rel; c1.appendChild(lab);
-    tr.appendChild(c0); tr.appendChild(c1); cellText(tr, f.size, 'num'); tb.appendChild(tr);
-  });
+  renderRows(r.files, scan);
   $('listSummary').textContent = t('list_summary', r.files.length) + (r.filtered ? t('list_filtered', r.filtered) : '');
   $('legacyBox').hidden = !r.legacy.length;
   if (r.legacy.length) {
@@ -886,8 +906,39 @@ function renderScan(job) {
   $('listCard').hidden = !r.files.length;
   $('runCard').hidden = !r.files.length;
   if (!outEdited || !$('out').value.trim()) { $('out').value = r.out_default; outEdited = false; }
-  updateTicked();
 }
+// a long list is built in steps, so the page keeps responding; the start button waits for the end
+const ROWS_STEP = 500;
+let rowsPending = false;
+function renderRows(files, owner) {
+  const tb = $('fileRows'); tb.textContent = '';
+  let at = 0;
+  rowsPending = true;
+  (function step() {
+    if (scan !== owner) return;      // scanned again or the folder changed meanwhile
+    const frag = document.createDocumentFragment();
+    for (const end = Math.min(at + ROWS_STEP, files.length); at < end; at++) {
+      const f = files[at], tr = document.createElement('tr');
+      const c0 = document.createElement('td'), box = document.createElement('input');
+      box.type = 'checkbox'; box.checked = true; box.id = 'f' + at; box.dataset.rel = f.rel;
+      box.disabled = jobRunning;
+      c0.appendChild(box);
+      const c1 = document.createElement('td'); c1.className = 'rel';
+      const lab = document.createElement('label'); lab.htmlFor = box.id; lab.textContent = f.rel; c1.appendChild(lab);
+      tr.appendChild(c0); tr.appendChild(c1); cellText(tr, f.size, 'num'); frag.appendChild(tr);
+    }
+    tb.appendChild(frag);
+    if (at < files.length) {
+      say('listNote', t('rendering', at, files.length), 'info');
+      $('run').disabled = true;
+      setTimeout(step, 0);
+      return;
+    }
+    rowsPending = false;
+    updateTicked();
+  })();
+}
+$('fileRows').addEventListener('change', () => updateTicked());
 function tickedRels() {
   return Array.prototype.slice.call(document.querySelectorAll('#fileRows input:checked')).map(b => b.dataset.rel);
 }
@@ -897,6 +948,7 @@ function pdfNote(paths) {
   return status && !status.tools.pdftotext ? t('pdf_missing', pdfs) : t('pdf_lossy');
 }
 function updateTicked() {
+  if (rowsPending) return;
   const rels = tickedRels(), total = scan ? scan.files.length : 0, note = pdfNote(rels);
   say('listNote', t('ticked', rels.length, total) + (note ? '\n' + note : ''), note ? 'warn' : 'info');
   if (!jobRunning) $('run').disabled = !rels.length;
@@ -906,11 +958,21 @@ $('none').addEventListener('click', () => { document.querySelectorAll('#fileRows
 
 $('run').addEventListener('click', () => {
   if (!scan) return;
-  const merge = opt('b', 'o-merge').checked;
-  const body = Object.assign({src: scan.src, since: scan.since, out: $('out').value, only: tickedRels(),
-                              force: !merge && $('exRedo').checked}, optionsBody('b'));
+  const size = batchSize();
+  if (size === null) { say('runStatus', t('bad_batch'), 'bad'); $('batchSize').focus(); return; }
+  const rels = tickedRels();
+  const body = Object.assign({src: scan.src, since: scan.since, out: $('out').value, count: rels.length,
+                              force: $('exRedo').checked, batch_size: size}, optionsBody('b'));
+  // every file ticked: the list is left out (it can be large) unless PDF files must be dropped from it
+  const pdfDropped = status && !status.tools.pdftotext && rels.some(r => /\.pdf$/i.test(r));
+  if (rels.length === scan.files.length && !pdfDropped) body.all = true;
+  else body.only = rels;
   startConversion(body, 'run', 'runStatus', 'batchResult');
 });
+function batchSize() {
+  const v = $('batchSize').value.trim();
+  return /^\d{1,7}$/.test(v) && +v <= 1000000 ? +v : null;
+}
 function startConversion(body, kind, statusId, resultId) {
   $(kind === 'files' ? 'filesRun' : 'run').disabled = true;
   confirmRun(body).then(ok => {
@@ -1126,7 +1188,7 @@ function renderDedup(job) {
 
 // ---------- one task at a time: busy state, cancel and polling
 const STARTERS = ['scan', 'run', 'filesRun', 'taskPreview', 'taskRun', 'taskRunAll', 'taskSave', 'dedupDry', 'dedupClean'];
-const BATCH_INPUTS = ['src', 'srcBrowse', 'useSince', 'since', 'out', 'outBrowse', 'all', 'none', 'exSkip', 'exRedo'];
+const BATCH_INPUTS = ['src', 'srcBrowse', 'useSince', 'since', 'out', 'outBrowse', 'all', 'none', 'exSkip', 'exRedo', 'batchSize'];
 const CANCEL = {scan: 'scanCancel', run: 'runCancel', files: 'filesCancel', tasks: 'tasksCancel', dedup: 'dedupCancel'};
 const PROG = {scan: 'scanProg', run: 'runProg', files: 'filesProg', tasks: 'tasksProg', dedup: 'dedupProg'};
 function setBusy(on, kind) {
@@ -1138,7 +1200,7 @@ function setBusy(on, kind) {
   Object.keys(PROG).forEach(k => { $(PROG[k]).hidden = !(on && k === kind); });
   if (on) closeBrowser();
   else {
-    if (scan) $('run').disabled = !tickedRels().length;
+    $('run').disabled = !scan || rowsPending || !tickedRels().length;
     $('filesRun').disabled = !chosen.length;
     $('dedupClean').disabled = !dryDone;
     updateTaskNote();
@@ -1173,6 +1235,43 @@ function poll() {
   }).catch(() => serviceGone());
 }
 
+// ---------- a reloaded page shows the current or latest task again: its tab, settings, progress, result
+const TAB_OF = {scan: 'tab-batch', run: 'tab-batch', files: 'tab-files', tasks: 'tab-tasks', dedup: 'tab-dedup'};
+function setOptions(prefix, p) {
+  opt(prefix, 'o-merge').checked = !!p.merge; opt(prefix, 'o-inline').checked = !!p.inline;
+  opt(prefix, 'o-images').checked = !!p.images; opt(prefix, 'o-dups').checked = !!p.keep_dups;
+  syncOptions();
+  opt(prefix, 'o-sheets').checked = !!p.sheets && !opt(prefix, 'o-sheets').disabled;
+}
+function restoreJob(job) {
+  const p = job.params || {};
+  if (TAB_OF[job.kind]) selectTab($(TAB_OF[job.kind]), false);
+  if (job.kind === 'scan' || job.kind === 'run') {
+    $('src').value = p.src || $('src').value;
+    $('useSince').checked = !!p.since; $('sinceRow').hidden = !p.since;
+    if (p.since) $('since').value = p.since;
+  }
+  if (job.kind === 'run') {
+    $('out').value = p.out || ''; outEdited = true;
+    setOptions('b', p);
+    $('batchSize').value = p.batch_size === undefined ? 1000 : p.batch_size;
+    $('exRedo').checked = !!p.force; $('exSkip').checked = !p.force;
+    $('runCard').hidden = false;
+    say('scanStatus', t('restored_rescan'), 'info');
+  } else if (job.kind === 'files') {
+    chosen = (p.files || []).slice();
+    $('filesOut').value = p.out || ''; filesOutEdited = true;
+    setOptions('f', p);
+    renderChosen();
+  } else if (job.kind === 'dedup') {
+    $('dedupTarget').value = p.target || '';
+    $('dedupBase').value = (p.base || []).join('\n');
+    $('dedupNoDb').checked = !!p.no_db;
+  }
+  if (job.state === 'running') { setBusy(true, job.kind); startPolling(); }
+  else poll();    // a finished task: its result
+}
+
 $('quit').addEventListener('click', () => {
   if (jobRunning && !confirm(t('quit_running'))) return;
   post('/api/quit').then(r => serviceGone(r.waiting ? t('closed_wait') : t('closed'))).catch(() => serviceGone());
@@ -1190,7 +1289,7 @@ api('/api/status').then(s => {
   syncOptions();
   renderChosen();
   ping();
-  if (s.job && s.job.state === 'running') { setBusy(true, s.job.kind); startPolling(); }
+  if (s.job && s.job.kind) restoreJob(s.job);
 }).catch(e => say('error', t('load_failed', e.message), 'bad'));
 </script>
 </body>
