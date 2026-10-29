@@ -4156,7 +4156,7 @@ def _run_batch(args, cache, writer=None):
     size = getattr(args, 'batch_size', None)
     size = DEFAULT_BATCH_SIZE if size is None else max(0, int(size))
     now = [(it['rel'], item_key(it)) for it in files]
-    work_dir, state, old = None, None, []
+    work_dir, state, old, sig = None, None, [], None
     if merge:
         work_dir = os.path.join(md_dir, WORK_DIR, safe_component(out_name))
         sig = {'lang': LANG, 'inline': not getattr(args, 'no_inline', False),
