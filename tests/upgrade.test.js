@@ -68,7 +68,7 @@ function startServer(ctx, lang) {
 
 function raw(port, opts, body) {
   return new Promise((resolve, reject) => {
-    const req = http.request({host: '127.0.0.1', port, ...opts}, res => { res.resume(); res.on('end', () => resolve(res.statusCode)); });
+    const req = http.request({host: '127.0.0.1', port, agent: false, ...opts}, res => { res.resume(); res.on('end', () => resolve(res.statusCode)); });
     req.on('error', reject);
     req.end(body);
   });
