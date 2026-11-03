@@ -2,6 +2,10 @@
 
 Releases follow VERSION; merging a version change to main publishes v<version> (.github/workflows/release.yml).
 
+## 2.3.0
+
+- The launcher is renamed from `双击运行.desktop` to `文档转知识库.desktop`, matching `Name[zh_CN]`, so it can be sent to the desktop next to other tools' launchers without a name clash. Its content and the `%k` + `readlink -f` lookup are unchanged; the not-found message and the page's closing notice name the new file. A link placed on the desktop earlier stops working and has to be sent to the desktop again from the tool folder. The release zip carries the new file. walkwithedi/doc2kb#8.
+
 ## 2.2.1
 
 - The READMEs end with a Feedback section giving the maintainer's feedback address. The sensitive-data scanner allows that one full address (PUBLIC_ADDRESSES) and still reports every other e-mail address. walkwithedi/edi-lab#206. No change to the converter.

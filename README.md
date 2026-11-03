@@ -19,7 +19,7 @@ Supports `.docx` `.xlsx` `.xlsm` `.pptx` `.pdf` `.eml`, the legacy `.doc` `.xls`
 | `doc2kb_core.py` | the converter: parsing, extraction, picture export and output. Command line with options for everything, no interface code. |
 | `doc2kb.sh` | entry script: without arguments it starts the browser interface; with arguments the incremental command-line mode for cron |
 | `doc2kb_web.py`, `doc2kb.html` | browser interface: a local web service (127.0.0.1 only) and its page: folder batch, chosen files, incremental tasks, duplicate clean-up |
-| `双击运行.desktop` | desktop launcher for the browser interface |
+| `文档转知识库.desktop` | desktop launcher for the browser interface |
 | `doc2kb_dedup.py` | removes sections from a merged or incremental file whose text is already in other output files, after a folder was moved or renamed |
 | `SPEC.md` | the behaviour contract: inputs, outputs and edge cases, for rebuilding or understanding the design |
 
@@ -42,7 +42,7 @@ Messages and the labels written into the output (headings, notes, table headers)
 
 ### Browser
 
-Double-click `双击运行.desktop`, or run `./doc2kb.sh` without arguments (or `python3 doc2kb_web.py`). The page opens in the browser with four tabs:
+Double-click `文档转知识库.desktop`, or run `./doc2kb.sh` without arguments (or `python3 doc2kb_web.py`). The page opens in the browser with four tabs:
 
 - **Folder batch**: choose the source folder (type the path or use "Browse…"), optionally a date, and press "Scan"; untick the files you do not want; check the output folder (default `<source>/_doc2kb`, `_知识库` in Chinese) and the options, then "Start". The result shows the summary and the report; "Open output folder" opens it.
 - **Chosen files**: add documents or archives from one or more folders and start; they are always converted again (you are asked before md files of the same name are replaced).
@@ -53,7 +53,7 @@ Double-click `双击运行.desktop`, or run `./doc2kb.sh` without arguments (or 
 
 Large folders are converted in batches ("Files per batch", default 1000; 0 = one batch), so tens of thousands of documents run at a steady pace. In merged mode each batch becomes a volume, `<name>-01.md`, `<name>-02.md`, …, with `<name>-index.md` naming the volume of each document; duplicates are found across all batches. A cancelled merged run keeps its finished batches: start it again with the same folders and options and it continues with the first unfinished batch (or choose "Start again from the first batch"). Reloading the page shows the running or latest task again with its settings, progress and result.
 
-Pictures are not exported unless "Export images" is ticked. The service listens on 127.0.0.1 only, with a one-time token in the address, and exits a few seconds after the last page is closed; "Quit" stops it at once. A run in progress is finished first. Paths are chosen in a folder list the service provides, not with the browser's file picker, because conversions need the real paths. To keep the launcher on the desktop, put a link to it there, not a copy. The service logs to `doc2kb_web.log` next to it (or `~/.cache/doc2kb/` when that folder is read-only).
+Pictures are not exported unless "Export images" is ticked. The service listens on 127.0.0.1 only, with a one-time token in the address, and exits a few seconds after the last page is closed; "Quit" stops it at once. A run in progress is finished first. Paths are chosen in a folder list the service provides, not with the browser's file picker, because conversions need the real paths. To keep the launcher on the desktop, put a link to it there (right-click it in the file manager and send it to the desktop), not a copy. Since 2.3.0 the launcher is called `文档转知识库.desktop` instead of `双击运行.desktop`, so it no longer clashes with other tools' launchers on the desktop; a link placed on the desktop earlier stops working and has to be sent to the desktop again from the tool folder. The service logs to `doc2kb_web.log` next to it (or `~/.cache/doc2kb/` when that folder is read-only).
 
 ### Incremental command line (cron)
 
