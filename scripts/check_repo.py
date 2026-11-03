@@ -5,6 +5,7 @@
   2. doc2kb.sh passes bash -n
   3. the tool's own scripts import only the standard library (and each other)
   4. VERSION holds a version, and CHANGELOG.md has a section for it
+  5. tool_upgrade.py is the copy named in TOOL_UPGRADE_VERSION (version and SHA-256; see check_tool_upgrade.py)
 
 stdout: one line per problem and a result line. Exit code 1 when any check fails.
 Usage: python3 scripts/check_repo.py [--log-level LEVEL]
@@ -20,8 +21,8 @@ import sys
 log = logging.getLogger("check_repo")
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s.%(funcName)s:%(lineno)d - %(message)s"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TOOL_SCRIPTS = ["doc2kb_core.py", "doc2kb_dedup.py", "doc2kb_web.py"]
-LOCAL_MODULES = {"doc2kb_core", "doc2kb_dedup"}
+TOOL_SCRIPTS = ["doc2kb_core.py", "doc2kb_dedup.py", "doc2kb_web.py", "tool_upgrade.py"]
+LOCAL_MODULES = {"doc2kb_core", "doc2kb_dedup", "tool_upgrade"}
 
 
 def python_files():
@@ -74,6 +75,9 @@ def main():
         problems.append(f"VERSION: {version!r} is not X.Y.Z")
     elif not re.search(r"^## %s$" % re.escape(version), open(os.path.join(ROOT, "CHANGELOG.md"), encoding="utf-8").read(), re.M):
         problems.append(f"CHANGELOG.md: no '## {version}' section")
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import check_tool_upgrade
+    problems += check_tool_upgrade.offline_problems(ROOT)
     for line in problems:
         print(line)
     print("result: " + (f"{len(problems)} problems" if problems else "ok"))

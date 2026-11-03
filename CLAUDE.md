@@ -13,6 +13,7 @@ This repository is public: code, history, commit e-mails, issues, pull requests 
 ## Layout and rules
 
 - doc2kb_core.py is the converter and the master copy: other projects copy it from here, so a change to it is made here first. doc2kb.sh is the entry script, doc2kb_dedup.py the clean-up tool, SPEC.md the behaviour contract; a change in behaviour updates SPEC.md and both READMEs.
+- tool_upgrade.py is an unchanged copy of the upgrade module whose master is in walkwithedi/edi-lab (.github/upgrade/tool_upgrade.py); never edit it here, change the master first. TOOL_UPGRADE_VERSION names the master version and the copy's SHA-256; scripts/check_tool_upgrade.py (run by check_repo.py, and against the master in CI) checks them. upgrade-keep.txt lists the files an upgrade carries over.
 - Python 3 standard library only, bash for the entry script; no third-party packages and nothing fetched at run time. scripts/check_repo.py enforces the imports.
 - Scripts log to stderr in the format the others use and take --log-level.
 - VERSION holds the version; CHANGELOG.md has a section for it. Merging a version change to main publishes v<version> with doc2kb-v<version>.zip (.github/workflows/release.yml).

@@ -2,6 +2,13 @@
 
 Releases follow VERSION; merging a version change to main publishes v<version> (.github/workflows/release.yml).
 
+## 2.4.0
+
+- Upgrade in place: the browser page has Upgrade beside Quit. A release zip or its unpacked folder is chosen by click, drag and drop or keyboard (a folder is zipped by the page); the check shows current version → new version, the CHANGELOG entries between the two, the files kept and any extra files, and calls out a downgrade or reinstall. The confirm button reads Upgrade to vX.Y.Z; stage text is shown while it runs, with the buttons disabled, and a running task is waited for. Afterwards the server starts again on the new version with the same port and token and the page reconnects. Roll back to previous version swaps back. The path does not change, so desktop links keep working.
+- Command line: `doc2kb_web.py --upgrade ZIP|FOLDER` (shows the check and asks; `--yes` skips the question) and `--rollback`; `doc2kb.sh` passes them through.
+- A release is refused, with the reason and the folder unchanged, when its top folder is not `doc2kb`, its version cannot be read, a program is missing, an entry has `..`, an absolute path, a symbolic link or a device file, it unpacks to more than 200 MB or 5000 entries, or the folder above is not writable; a failure part-way restores the folder. An uploaded zip is written only to the system temporary folder and removed afterwards; the new endpoints check the token, Host and Origin; no task can start while an upgrade runs.
+- New files: `tool_upgrade.py`, an unchanged copy of the upgrade module (the version it came from and its SHA-256 are in `TOOL_UPGRADE_VERSION`; `scripts/check_repo.py` compares the copy with it, CI with the master copy), and `upgrade-keep.txt` (`doc2kb_web.log`). All three are in the release zip. walkwithedi/doc2kb#9.
+
 ## 2.3.0
 
 - The launcher is renamed from `双击运行.desktop` to `文档转知识库.desktop`, matching `Name[zh_CN]`, so it can be sent to the desktop next to other tools' launchers without a name clash. Its content and the `%k` + `readlink -f` lookup are unchanged; the not-found message and the page's closing notice name the new file. A link placed on the desktop earlier stops working and has to be sent to the desktop again from the tool folder. The release zip carries the new file. walkwithedi/doc2kb#8.
