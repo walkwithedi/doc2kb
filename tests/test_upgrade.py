@@ -46,7 +46,9 @@ class CopyCheck(unittest.TestCase):
         master = os.path.join(self.tmp, 'master')
         path = os.path.join(master, '.github', 'upgrade')
         os.makedirs(path)
-        git = lambda *a: subprocess.run(['git', '-C', master] + list(a), check=True, capture_output=True)
+        # a commit hook sets GIT_DIR, GIT_INDEX_FILE and the like: keep them away from the scratch repository
+        env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
+        git = lambda *a: subprocess.run(['git', '-C', master] + list(a), check=True, capture_output=True, env=env)
         git('init', '-q')
         git('config', 'user.email', 'test@example.com')
         git('config', 'user.name', 'test')

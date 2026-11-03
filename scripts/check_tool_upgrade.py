@@ -67,13 +67,14 @@ def master_problems(master_dir, root=ROOT):
     version, _ = read_pin(root)
     with open(os.path.join(root, "tool_upgrade.py"), "rb") as f:
         data = f.read()
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}   # not the hook's repository
     r = subprocess.run(["git", "-C", master_dir, "log", "--all", "--format=%H", "--", MASTER],
-                       capture_output=True)
+                       capture_output=True, env=env)
     if r.returncode != 0:
         return [f"{master_dir} is not a clone with history: {r.stderr.decode(errors='replace').strip()}"]
     seen_version = False
     for rev in r.stdout.decode().split():
-        show = subprocess.run(["git", "-C", master_dir, "show", f"{rev}:{MASTER}"], capture_output=True)
+        show = subprocess.run(["git", "-C", master_dir, "show", f"{rev}:{MASTER}"], capture_output=True, env=env)
         if show.returncode != 0:
             continue
         if module_version(show.stdout) != version:
