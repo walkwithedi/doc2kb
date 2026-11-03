@@ -78,6 +78,12 @@ async function noScroll(page, what) {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 360), 'horizontal scroll at 360px: ' + what);
 }
 
+async function nextDialog(dialogs, before) {
+  // the dialog event may arrive after click() returns
+  for (let i = 0; i < 100 && dialogs.length <= before; i++) await new Promise(r => setTimeout(r, 50));
+  return dialogs[dialogs.length - 1] || '';
+}
+
 (async () => {
   const browser = await chromium.launch(process.env.CHROMIUM_PATH ? {executablePath: process.env.CHROMIUM_PATH} : {});
   const ctx = prepare();
@@ -130,8 +136,9 @@ async function noScroll(page, what) {
 
     const pid = srv.proc.pid;
     const loaded = page.waitForEvent('load', {timeout: 60000});
+    const nDialogsGo = dialogs.length;
     await page.click('#up-go');
-    assert.match(dialogs[dialogs.length - 1], /多出来的文件/);
+    assert.match(await nextDialog(dialogs, nDialogsGo), /多出来的文件/);
     assert.ok(await page.isDisabled('#up-go'), 'the button is disabled while upgrading');
     assert.ok(await page.isDisabled('#up-rollback'));
     await loaded;
@@ -148,8 +155,9 @@ async function noScroll(page, what) {
     await page.click('#up-open');
     await page.waitForFunction(() => !document.getElementById('up-rollback').disabled);
     const back = page.waitForEvent('load', {timeout: 60000});
+    const nDialogsRollback = dialogs.length;
     await page.click('#up-rollback');
-    assert.ok(dialogs[dialogs.length - 1].includes('会把当前 ' + ctx.newVer + ' 换成上一版 ' + ctx.oldVer), dialogs.join('|'));
+    assert.ok((await nextDialog(dialogs, nDialogsRollback)).includes('会把当前 ' + ctx.newVer + ' 换成上一版 ' + ctx.oldVer), dialogs.join('|'));
     await back;
     const st2 = await page.evaluate(t => fetch('/api/upgrade', {headers: {'X-Token': t}}).then(r => r.json()), token);
     assert.strictEqual(st2.current, ctx.oldVer);
