@@ -2,6 +2,10 @@
 
 Releases follow VERSION; merging a version change to main publishes v<version> (.github/workflows/release.yml).
 
+## 2.4.1
+
+- The upgrade module copy is version 1.1: files unpacked or copied by an upgrade get 755 or 644 by whether the owner may run them, less the bits the process umask clears (as unzip and cp do), instead of those modes unchanged; with the usual umask 022 nothing differs. TOOL_UPGRADE_VERSION names 1.1 and the new SHA-256.
+
 ## 2.4.0
 
 - Upgrade in place: the browser page has Upgrade beside Quit. A release zip or its unpacked folder is chosen by click, drag and drop or keyboard (a folder is zipped by the page); the check shows current version → new version, the CHANGELOG entries between the two, the files kept and any extra files, and calls out a downgrade or reinstall. The confirm button reads Upgrade to vX.Y.Z; stage text is shown while it runs, with the buttons disabled, and a running task is waited for. Afterwards the server starts again on the new version with the same port and token and the page reconnects. Roll back to previous version swaps back. The path does not change, so desktop links keep working.
