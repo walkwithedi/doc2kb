@@ -136,3 +136,7 @@ python3 scripts/run_checks.py             # tests, repository checks, personal-d
 ```
 
 `doc2kb_core.py` is the master copy for projects that bundle the converter. Rules for contributions: [CONTRIBUTING.md](CONTRIBUTING.md); changes: [CHANGELOG.md](CHANGELOG.md). Licence: [MIT](LICENSE).
+
+## Feedback
+
+Send suggestions and feedback to [hong.xie.me@outlook.com](mailto:hong.xie.me@outlook.com).
