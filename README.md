@@ -22,6 +22,8 @@ Supports `.docx` `.xlsx` `.xlsm` `.pptx` `.pdf` `.eml`, the legacy `.doc` `.xls`
 | `文档转知识库.desktop` | desktop launcher for the browser interface |
 | `doc2kb_dedup.py` | removes sections from a merged or incremental file whose text is already in other output files, after a folder was moved or renamed |
 | `SPEC.md` | the behaviour contract: inputs, outputs and edge cases, for rebuilding or understanding the design |
+| `tool_upgrade.py`, `TOOL_UPGRADE_VERSION` | the upgrade module (in-place upgrade and roll-back), an unchanged copy of a shared master; `TOOL_UPGRADE_VERSION` names its version |
+| `upgrade-keep.txt` | files an upgrade carries over to the new version, one relative path a line |
 
 ## Requirements
 
@@ -118,6 +120,22 @@ python3 doc2kb_dedup.py OUTPUT/Documents_20261007_incremental.md
 - Removed sections appear in the index's "Documents moved, content unchanged" table with current path, old path and the file holding the text.
 - Source documents and pictures are never touched; picture folders used by removed sections are listed in the report.
 - If the file was already imported into a knowledge base, replace it there with the cleaned one.
+
+## Upgrade
+
+Unpack the first release into a folder of your choice that you will keep and send the launcher to the desktop from there. Later releases replace that folder's contents in place, so the path does not change and desktop links keep working.
+
+1. Download the new release zip (or unpack it and use the `doc2kb` folder inside).
+2. On the page, choose Upgrade beside Quit and pick or drop the zip or the folder. The check shows current version → new version, the changes between the two from CHANGELOG.md, the files kept and any extra files; a downgrade or reinstall is called out.
+3. Choose Upgrade to vX.Y.Z. Stage text is shown while it runs and the buttons are disabled; a running task is waited for. The service then starts again on the new version at the same address and the page reconnects.
+
+On the command line: `python3 doc2kb_web.py --upgrade doc2kb-vX.Y.Z.zip` or `./doc2kb.sh --upgrade doc2kb-vX.Y.Z.zip` shows the same check and asks (`--yes` skips the question).
+
+- Kept: `doc2kb_web.log` (listed in `upgrade-keep.txt`). The incremental tasks are in `~/.config/doc2kb` and their watermarks in the output folders, so they are not touched.
+- Extra files: files in the tool folder that are neither on the keep list nor in the new release are listed first, not deleted, and stay with the previous version.
+- Previous version: the old folder becomes the hidden `.doc2kb.上一版` next to it; only one is kept. Roll back to previous version (on the page, or `--rollback`) swaps the two; doing it again returns to the newer one.
+- Nothing changes, and the reason is shown, when the chosen item is not a doc2kb release (its top folder is not `doc2kb`), its version cannot be read, a program or the launcher is missing, an entry has `..`, an absolute path, a symbolic link or a device file, it unpacks to more than 200 MB or 5000 entries, or the folder above the tool folder is not writable. A failure part-way restores the folder as it was. The page writes an uploaded zip only to the system temporary folder and removes it afterwards; a chosen folder is zipped by the page first.
+- From a release without Upgrade (2.3.0 and earlier): unpack the new release elsewhere and run `python3 <unpacked folder>/tool_upgrade.py --tool-dir <tool folder> --upgrade doc2kb-vX.Y.Z.zip`; later upgrades work as above.
 
 ## Formats
 

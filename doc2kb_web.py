@@ -36,6 +36,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import doc2kb_core as core  # noqa: E402  constants and labels only; conversions run in a child
 import doc2kb_dedup as dedup  # noqa: E402  labels only; the clean-up runs in a child
+try:
+    import tool_upgrade  # noqa: E402  the upgrade module (an unchanged copy); everything else works without it
+except ImportError:
+    tool_upgrade = None
 
 LOG_FORMAT = core.LOG_FORMAT
 log = logging.getLogger('doc2kb_web')
@@ -46,6 +50,8 @@ SHELL = os.path.join(HERE, 'doc2kb.sh')
 DEDUP = os.path.join(HERE, 'doc2kb_dedup.py')
 VERSION_FILE = os.path.join(HERE, 'VERSION')
 LOG_NAME = 'doc2kb_web.log'
+UPGRADE_MAIN = ('doc2kb_web.py', 'doc2kb_core.py', 'doc2kb.sh', 'doc2kb.html')   # a release must carry these
+RESTART_ARGS = []       # arguments for the restart on the new version after an upgrade
 PING_TIMEOUT = 600      # seconds without a heartbeat before a page counts as closed (fallback only)
 OPEN_TIMEOUT = 120      # seconds to wait for the first page before exiting
 BYE_GRACE = 5           # seconds after the last page closed; a reloaded page registers again meanwhile
@@ -99,6 +105,14 @@ MESSAGES = {
     'tell_no_browser': ('Could not open a browser. Open this address in one: %s',
                         '未能自动打开浏览器，请在浏览器中打开：%s'),
     'serving': ('Browser interface: %s', '网页界面：%s'),
+    'no_upgrade': ('the upgrade module tool_upgrade.py is missing; unpack the whole doc2kb folder again',
+                   '缺少升级模块 tool_upgrade.py，请重新解压完整的 doc2kb 目录'),
+    'no_file': ('no file was received', '没有收到文件'),
+    'upgrade_missing': ('Upgrade failed: tool_upgrade.py is missing. Unpack the whole doc2kb folder again and retry.',
+                        '升级失败：缺少 tool_upgrade.py。请重新解压完整的 doc2kb 目录后重试。'),
+    'upgrading': ('an upgrade or roll-back is running; wait for it to finish', '正在升级或退回上一版，请等它完成'),
+    'restart_failed': ('Restarting after the upgrade failed: the port is taken. Start doc2kb again.',
+                       '升级后重新启动失败：端口已被占用。请重新双击「文档转知识库」。'),
 }
 
 LANG = 'en'
@@ -821,6 +835,11 @@ class WebState:
         self.empty_since = None
         self.quit = threading.Event()
         self.job = Job()
+        self.upgrade = (tool_upgrade.WebJob(HERE, UPGRADE_MAIN, LANG, busy=lambda: self.job.running)
+                        if tool_upgrade else None)
+
+    def upgrading(self):
+        return bool(self.upgrade and (self.upgrade.running or self.upgrade.restart.is_set()))
 
     def ping(self, page):
         with self.lock:
@@ -844,7 +863,7 @@ class WebState:
                     del self.pages[page]
                     if not self.pages:
                         self.empty_since = now - BYE_GRACE
-            if self.job.running:
+            if self.job.running or self.upgrading():
                 return None
             if self.quit.is_set():
                 return 'quit requested'
@@ -904,6 +923,36 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(403, {'error': M('denied')})
         return ok
 
+    def upgrade_post(self, path):
+        job = self.state.upgrade
+        if not job:
+            self.send_json(404, {'error': M('no_upgrade')})
+            return
+        if path == '/api/upgrade/check':
+            # the body is the zip itself (a folder is zipped by the page); it goes to the system temporary folder
+            try:
+                n = int(self.headers.get('Content-Length') or 0)
+            except ValueError:
+                n = 0
+            if n <= 0:
+                self.send_json(400, {'error': M('no_file')})
+                return
+            code, obj = job.check_upload(self.rfile, n)
+            if code != 200:
+                self.close_connection = True    # the body may be partly unread
+            self.send_json(code, obj)
+        elif path == '/api/upgrade/apply':
+            code, obj = job.start_upgrade(self.read_json().get('id'))
+            log.info('upgrade requested: %s', code)
+            self.send_json(code, obj)
+        elif path == '/api/upgrade/rollback':
+            self.read_json()
+            code, obj = job.start_rollback()
+            log.info('roll-back requested: %s', code)
+            self.send_json(code, obj)
+        else:
+            self.send_json(404, {'error': M('not_found')})
+
     def read_json(self):
         try:
             n = int(self.headers.get('Content-Length') or 0)
@@ -940,6 +989,13 @@ class Handler(BaseHTTPRequestHandler):
                              "connect-src 'self'; img-src 'self' data:")
             self.end_headers()
             self.wfile.write(body)
+        elif url.path == '/api/upgrade':
+            if not self.state.upgrade:
+                self.send_json(404, {'error': M('no_upgrade')})
+                return
+            out = self.state.upgrade.status()
+            out['version'] = read_version()
+            self.send_json(200, out)
         elif url.path == '/api/status':
             self.send_json(200, {
                 'lang': LANG, 'version': read_version(), 'home': os.path.expanduser('~'),
@@ -980,8 +1036,14 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not self.allowed(True):
             return
+        if url.path.startswith('/api/upgrade/'):
+            self.upgrade_post(url.path)     # the body may be a zip, not JSON
+            return
         data = self.read_json()
         job = self.state.job
+        if url.path in ('/api/scan', '/api/run', '/api/tasks/run', '/api/dedup') and self.state.upgrading():
+            self.send_json(409, {'error': M('upgrading')})
+            return
         if url.path == '/api/ping':
             self.state.ping(str(data.get('page')))
             self.send_json(200, {'ok': True})
@@ -1084,9 +1146,15 @@ class Handler(BaseHTTPRequestHandler):
 
 def watchdog(server, st, interval=1):
     """Stops the server on "Quit", when every page is closed, or when no page ever opened;
-    a running task is waited for."""
+    a running task is waited for. After an upgrade or roll-back it stops so that serve() can
+    start again on the new version."""
+    restart = st.upgrade.restart if st.upgrade else threading.Event()
     while True:
         st.quit.wait(interval)
+        if restart.is_set():
+            time.sleep(0.5)     # let the page see that the upgrade finished
+            log.info('upgrade finished, restarting')
+            break
         reason = st.should_exit()
         if reason:
             log.info('%s, exiting', reason)
@@ -1106,11 +1174,22 @@ def serve(open_browser=True):
         logging.getLogger().addHandler(fh)
     except OSError as e:
         log.warning('no log file: %s', e)
-    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
-    st = WebState(server.server_address[1], secrets.token_urlsafe(24))
+    resume = tool_upgrade.resumed() if tool_upgrade else None
+    if resume:
+        # started again after an upgrade or roll-back: same port and token, so the open page reconnects
+        server = listen_again(int(resume.get('port') or 0))
+        token = str(resume.get('token') or '')
+        open_browser = False
+        if server is None or not token:
+            tell_user(M('restart_failed'))
+            return 1
+    else:
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        token = secrets.token_urlsafe(24)
+    st = WebState(server.server_address[1], token)
     Handler.state = st
     url = '%s/?t=%s' % (st.origin, st.token)
-    log.info('serving on %s', st.origin)
+    log.info('serving on %s%s', st.origin, ' (restarted after an upgrade)' if resume else '')
     print(M('serving', url), flush=True)
     threading.Thread(target=watchdog, args=(server, st), daemon=True).start()
     if open_browser and not webbrowser.open(url):
@@ -1122,8 +1201,27 @@ def serve(open_browser=True):
     finally:
         server.server_close()
         st.job.cancel()
+        if st.upgrade:
+            st.upgrade.cleanup()
     log.info('server stopped')
+    if st.upgrade and st.upgrade.restart.is_set():
+        tool_upgrade.restart(os.path.join(HERE, 'doc2kb_web.py'), ['--no-browser', '--lang', LANG] + RESTART_ARGS,
+                             {'port': st.port, 'token': st.token})
     return 0
+
+
+def listen_again(port, timeout=10):
+    """The port used before the upgrade again; retried while it is not yet free, None after timeout."""
+    end = time.monotonic() + timeout
+    while port:
+        try:
+            return ThreadingHTTPServer(('127.0.0.1', port), Handler)
+        except OSError as e:
+            if time.monotonic() >= end:
+                log.error('cannot listen on port %d again: %s', port, e)
+                return None
+            time.sleep(0.2)
+    return None
 
 
 def main(argv=None):
@@ -1132,6 +1230,11 @@ def main(argv=None):
     ap.add_argument('--no-browser', action='store_true', help='do not open a browser, only print the address')
     ap.add_argument('--lang', choices=core.LANGS, default=None,
                     help='interface language (default: DOC2KB_LANG, else zh for a zh locale, else en)')
+    ap.add_argument('--upgrade', metavar='ZIP_OR_FOLDER',
+                    help='upgrade this folder in place from a release zip or its unpacked folder: shows the check '
+                         'and asks; the files in upgrade-keep.txt are kept and the old version stays as the previous one')
+    ap.add_argument('--rollback', action='store_true', help='swap back to the previous version')
+    ap.add_argument('--yes', action='store_true', help='with --upgrade or --rollback: do not ask')
     ap.add_argument('--log-level', default=os.environ.get('LOG_LEVEL', 'WARNING').upper(),
                     type=str.upper, choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
                     help='default: environment variable LOG_LEVEL, else WARNING')
@@ -1139,6 +1242,13 @@ def main(argv=None):
     logging.basicConfig(level=args.log_level, format=LOG_FORMAT, stream=sys.stderr)
     LANG = args.lang or detect_lang()
     core.set_lang(LANG)
+    RESTART_ARGS[:] = ['--log-level', args.log_level]
+    if args.upgrade or args.rollback:
+        if not tool_upgrade:
+            print(M('upgrade_missing'), file=sys.stderr)
+            return 1
+        return tool_upgrade.cli(HERE, UPGRADE_MAIN, upgrade=args.upgrade, do_rollback=args.rollback,
+                                yes=args.yes, lang=LANG)
     return serve(open_browser=not args.no_browser)
 
 

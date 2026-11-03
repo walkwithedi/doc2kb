@@ -544,6 +544,31 @@ shrank.
   no horizontal scrolling at 360 px; text from files is written as text, never as markup; nothing is
   loaded from the network.
 
+#### Upgrade in place
+
+The tool folder is upgraded where it is, so its path (and every desktop link to the launcher) stays the
+same. The work is done by `tool_upgrade.py`, an unchanged copy of a shared upgrade module whose version and
+SHA-256 are in `TOOL_UPGRADE_VERSION`; it is never edited here.
+
+- Entry points: the page's Upgrade panel (beside Quit) and `doc2kb_web.py --upgrade ZIP|FOLDER` (shows the
+  check and asks, `--yes` skips the question) and `--rollback`; `doc2kb.sh --upgrade` / `--rollback` pass
+  them on.
+- Check: the chosen zip or folder must have the top folder `doc2kb`, a readable `VERSION`, and
+  `doc2kb_web.py`, `doc2kb_core.py`, `doc2kb.sh`, `doc2kb.html` and a launcher. Entries with `..`, an absolute
+  path, a symbolic link or a device file, more than 5000 entries or more than 200 MB unpacked, and a folder
+  above the tool folder that is not writable are refused with the reason, and nothing changes. The page
+  shows current version → new version, the CHANGELOG sections between the two, the kept files and the extra
+  files; a lower or equal version is called out as a downgrade or reinstall.
+- Apply: unpack next to the tool folder into `.doc2kb.升级中`, copy the files listed in `upgrade-keep.txt`
+  (`doc2kb_web.log`; the incremental tasks are in `~/.config/doc2kb`, outside the folder), keep execute
+  bits, then rename the old folder to `.doc2kb.上一版` (only one is kept) and the new one into place. Any
+  failure restores the folder. Extra files (neither kept nor in the release) stay with the previous version.
+- Roll back swaps `.doc2kb.上一版` and the tool folder.
+- The page: a running task is waited for and no task starts meanwhile; stage text is shown with the buttons
+  disabled; an uploaded zip is written only to the system temporary folder and removed afterwards; the
+  endpoints check the token, Host and Origin like the others. Afterwards the server runs itself again on the
+  new version with the same port and token, and the page reconnects and reloads.
+
 ### 6.2 Command-line mode
 
 Arguments mean command-line mode, with no dependency on a desktop. It must work in a scheduler's minimal

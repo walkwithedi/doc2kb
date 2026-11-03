@@ -28,6 +28,56 @@ jobs:
         run: python scripts/check_repo.py
       - name: shellcheck
         run: shellcheck -S warning doc2kb.sh .githooks/* .claude/hooks/session-start.sh
+  web:
+    # The browser page's Upgrade and Roll back with Playwright and Chromium.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Playwright
+        run: |
+          npm install --no-save --no-package-lock playwright@1.49.1
+          npx playwright install --with-deps chromium
+      - name: Page tests
+        run: node tests/upgrade.test.js
+  tool-upgrade:
+    # tool_upgrade.py must be the master copy (walkwithedi/edi-lab, .github/upgrade/tool_upgrade.py) at the
+    # version in TOOL_UPGRADE_VERSION. The master repository is private: the job reads it with the
+    # EDI_LAB_READ_TOKEN secret (read access to its contents) and only notes that it was skipped without it.
+    # scripts/check_repo.py checks the copy against the pinned SHA-256 in every run either way.
+    runs-on: ubuntu-latest
+    env:
+      TOKEN: ${{ secrets.EDI_LAB_READ_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Master copy
+        if: env.TOKEN != ''
+        uses: actions/checkout@v7
+        with:
+          repository: walkwithedi/edi-lab
+          token: ${{ secrets.EDI_LAB_READ_TOKEN }}
+          path: _master
+          fetch-depth: 0
+          sparse-checkout: .github/upgrade
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Compare the copy
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::notice::EDI_LAB_READ_TOKEN is not set: compared with the pinned SHA-256 only"
+            python scripts/check_tool_upgrade.py
+          else
+            python scripts/check_tool_upgrade.py _master
+          fi
   scan:
     # Logs of this public repository are public: the scanner prints only file:line and the rule
     # under GitHub Actions, and gitleaks runs with --redact.

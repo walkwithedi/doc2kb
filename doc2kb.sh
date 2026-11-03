@@ -49,6 +49,11 @@
 #   -n                only report which files would be processed (dry run)
 #   -h                show this help
 #
+# Upgrade (passed to doc2kb_web.py, which uses the upgrade module tool_upgrade.py):
+#   --upgrade ZIP|DIR [--yes]   replace this folder with a new release in place, keeping the
+#                               previous version; shows the check and asks unless --yes
+#   --rollback [--yes]          swap back to the previous version
+#
 # Without -i the text keeps its [Image NNN] anchors but no picture files are written,
 # which keeps cron runs fast and small.
 #
@@ -206,6 +211,16 @@ for a in "$@"; do
     ARGS+=("$a")
 done
 set -- "${ARGS[@]}"
+
+# ---------------- upgrade: handed to the browser interface program ----------------
+if [ "$1" = "--upgrade" ] || [ "$1" = "--rollback" ]; then
+    command -v python3 >/dev/null 2>&1 && [ -f "$SCRIPT_DIR/doc2kb_web.py" ] || {
+        t "python3 or $SCRIPT_DIR/doc2kb_web.py not found; install python3 or unpack the whole doc2kb folder again." \
+          "未找到 python3 或 $SCRIPT_DIR/doc2kb_web.py，请安装 python3 或重新解压完整的 doc2kb 目录。" >&2; echo >&2
+        exit 1
+    }
+    exec python3 "$SCRIPT_DIR/doc2kb_web.py" --lang "$UI_LANG" "$@"
+fi
 
 # ---------------- options ----------------
 while [ $# -gt 0 ]; do

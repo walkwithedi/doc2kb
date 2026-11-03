@@ -1,0 +1,3 @@
+# Files in the tool folder that an upgrade carries over to the new version, one relative path a line.
+# doc2kb_web.log is the browser interface log; the incremental tasks live in ~/.config/doc2kb, outside the folder.
+doc2kb_web.log
