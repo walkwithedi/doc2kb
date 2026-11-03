@@ -42,7 +42,7 @@ import time
 import uuid
 import zipfile
 
-MODULE_VERSION = '1.0'
+MODULE_VERSION = '1.1'
 LOG_FORMAT = '%(asctime)s [%(levelname)s] %(name)s.%(funcName)s:%(lineno)d - %(message)s'
 log = logging.getLogger('tool_upgrade')
 
@@ -318,11 +318,27 @@ def safe_parts(name):
     return parts
 
 
+def process_umask():
+    """当前进程的 umask。读 /proc/self/status，不调用 os.umask()：后者要先改再改回，多线程的网页服务里
+    会临时影响其他线程新建的文件。读不到时按 022。"""
+    try:
+        with open('/proc/self/status', encoding='ascii', errors='replace') as f:
+            for line in f:
+                if line.startswith('Umask:'):
+                    return int(line.split()[1], 8) & 0o777
+    except (OSError, ValueError, IndexError):
+        log.debug('umask unreadable, using 022')     # 没有 /proc 或格式不同：按常见默认值处理
+    return 0o022
+
+
 def clean_mode(mode, head=b''):
-    """解压后的权限：保留读写执行位，去掉 setuid、setgid、粘滞位与组和其他人的写权限。"""
+    """解压后的权限：只看属主是否可执行，可执行的给 755、其余给 644，再按 umask 去掉相应的位
+    （与 unzip、cp 相同），不保留 setuid、setgid 与粘滞位。"""
     if mode & 0o777:
-        return 0o755 if mode & 0o100 else 0o644
-    return 0o755 if head.startswith(b'#!') else 0o644
+        base = 0o755 if mode & 0o100 else 0o644
+    else:
+        base = 0o755 if head.startswith(b'#!') else 0o644
+    return base & ~process_umask()
 
 
 class ZipSource:
@@ -736,7 +752,7 @@ def apply(tool_dir, source, main=(), lang=None, extra_keep=(), progress=None):
         for n in os.listdir(staging):
             p = os.path.join(staging, n)
             if n.endswith('.desktop') and os.path.isfile(p) and not os.path.islink(p):
-                os.chmod(p, os.stat(p).st_mode | 0o755)
+                os.chmod(p, stat.S_IMODE(os.stat(p).st_mode) | (0o755 & ~process_umask()) | 0o100)
         os.chmod(staging, stat.S_IMODE(os.stat(tool_dir).st_mode) | 0o700)
         stage('stage_swap')
         if os.path.lexists(previous):
@@ -779,7 +795,7 @@ def rollback_info(tool_dir):
     try:
         info['current'] = current_version(tool_dir)['label']
     except UpgradeError:
-        pass
+        pass        # 当前目录读不出版本时照样能退回，版本号留空
     if os.path.isdir(previous) and not os.path.islink(previous):
         info['available'] = True
         try:
@@ -812,7 +828,6 @@ def rollback(tool_dir, lang=None, progress=None):
         _fail_rename(previous, tool_dir)
         step = 2
         _fail_rename(swapping, previous)
-        step = 3
     except OSError as e:
         log.error('rollback failed at step %d: %s', step, e)
         try:
@@ -876,7 +891,7 @@ def save_upload(rfile, length, limit=None):
         try:
             os.unlink(path)
         except OSError:
-            pass
+            pass    # 临时文件已不在：没有要清理的
         raise
     return path
 
@@ -908,7 +923,7 @@ class WebJob:
                 try:
                     os.unlink(p)
                 except OSError:
-                    pass
+                    pass    # 临时文件已不在：没有要清理的
         self.pending.clear()
 
     def check_upload(self, rfile, length):
@@ -1004,7 +1019,7 @@ class WebJob:
                 try:
                     os.unlink(tmp)
                 except OSError:
-                    pass
+                    pass    # 临时文件已不在：没有要清理的
 
     def status(self):
         with self.lock:

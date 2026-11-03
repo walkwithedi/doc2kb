@@ -8,8 +8,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock as mock
 import zipfile
-from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'scripts'))
