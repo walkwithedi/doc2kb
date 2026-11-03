@@ -2,6 +2,10 @@
 
 Releases follow VERSION; merging a version change to main publishes v<version> (.github/workflows/release.yml).
 
+## 2.2.1
+
+- The READMEs end with a Feedback section giving the maintainer's feedback address. The sensitive-data scanner allows that one full address (PUBLIC_ADDRESSES) and still reports every other e-mail address. walkwithedi/edi-lab#206. No change to the converter.
+
 ## 2.2.0
 
 - Folder batches run in batches of `--batch-size` files (default 1000; 0 = one batch). The report is written after each batch instead of after each document, and each batch's texts leave memory when it ends, so the time per document no longer grows with the size of the run.

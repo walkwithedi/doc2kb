@@ -135,3 +135,7 @@ python3 scripts/run_checks.py             # 测试、仓库检查、个人信息
 ```
 
 `doc2kb_core.py` 是转换器的母版，其他项目内置的转换器都从这里复制。参与贡献的规则见 [CONTRIBUTING.md](CONTRIBUTING.md)；变更记录见 [CHANGELOG.md](CHANGELOG.md)。许可证：[MIT](LICENSE)。
+
+## 反馈
+
+意见和建议请发邮件到 [hong.xie.me@outlook.com](mailto:hong.xie.me@outlook.com)。
