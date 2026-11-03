@@ -476,7 +476,8 @@ duplicate handling and reports:
 
 ### 6.1 Browser interface
 
-`doc2kb_web.py` serves `doc2kb.html`; the desktop launcher `双击运行.desktop` and `doc2kb.sh` without
+`doc2kb_web.py` serves `doc2kb.html`; the desktop launcher `文档转知识库.desktop` (its file name matches `Name[zh_CN]`, so it does not clash
+with other tools' launchers when sent to the desktop) and `doc2kb.sh` without
 arguments start it. Four tabs:
 
 1. **Folder batch**: choose the source folder -> optional date filter -> scan -> **confirm or untick
