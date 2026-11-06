@@ -583,8 +583,9 @@ def vsdx(path, english=False, stencil=False):
     field, shape data (one row hidden), a shape that takes its text from its master and a
     picture; page 2: empty; page 3: a background page. stencil=True: masters only, no pages."""
     start, check = ("Start", "Review") if english else ("开始", "审核")
+    decision = _vsd_shape(1, "<cp IX='0'/>Decision")
     master = (f'<?xml version="1.0" encoding="UTF-8"?><MasterContents xmlns="{VSD}">'
-              f'<Shapes>{_vsd_shape(1, "<cp IX=\'0\'/>Decision")}</Shapes></MasterContents>')
+              f"<Shapes>{decision}</Shapes></MasterContents>")
     masters = (f'<?xml version="1.0" encoding="UTF-8"?><Masters xmlns="{VSD}" xmlns:r="{R}">'
                '<Master ID="2" NameU="Decision" Name="Decision"><Rel r:id="rId1"/></Master></Masters>')
     parts = {
