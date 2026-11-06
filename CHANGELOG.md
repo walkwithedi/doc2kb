@@ -2,6 +2,11 @@
 
 Releases follow VERSION; merging a version change to main publishes v<version> (.github/workflows/release.yml).
 
+## 2.5.0
+
+- Visio drawings: `.vsdx`, `.vsdm`, the stencils `.vssx`, `.vssm` and the templates `.vstx`, `.vstm` are converted. One section per page in the drawing's page order (background pages marked); one line per shape with its text (group children included, field values kept, the master's text when the shape has none); labelled shape data as `label: value` without hidden rows; connections whose two ends have text as `A → B (connector text)`; pictures exported like slide pictures. A stencil without pages is read master by master. The document time and authors come from the core properties. SPEC 3.4b.
+- The legacy binary Visio `.vsd` is listed under "need a new format first" with `.msg`; the report asks to save it as `.vsdx`. The browser page's notes on legacy formats name `.msg` and `.vsd`.
+
 ## 2.4.1
 
 - The upgrade module copy is version 1.1: files unpacked or copied by an upgrade get 755 or 644 by whether the owner may run them, less the bits the process umask clears (as unzip and cp do), instead of those modes unchanged; with the usual umask 022 nothing differs. TOOL_UPGRADE_VERSION names 1.1 and the new SHA-256.

@@ -129,6 +129,19 @@ LABELS = {
     'pptx_shapes': ('these slides may hold charts drawn with shapes (vector, cannot be exported as images): '
                     'slide %s. Take screenshots of them by hand.',
                     '以下页面可能用 PPT 形状绘制了图表（矢量，无法提取为图片）：第 %s 页。这些页需要手工截图。'),
+    # vsdx
+    'vsd_no_pages': ('no pages or masters found', '未找到任何页面或主控形状'),
+    'vsd_count': ('%d pages', '共 %d 页'),
+    'vsd_page_heading': ('\n## Page %d: %s\n', '\n## 第 %d 页：%s\n'),
+    'vsd_bg_heading': ('\n## Page %d: %s (background)\n', '\n## 第 %d 页：%s（背景页）\n'),
+    'vsd_master_heading': ('\n## Master %d: %s\n', '\n## 主控形状 %d：%s\n'),
+    'vsd_no_text': ('*(no text on this page)*', '*（本页无文字）*'),
+    'vsd_no_label': ('(shape without text)', '（无文字的形状）'),
+    'vsd_data_sep': (': ', '：'),
+    'vsd_links': ('\nConnections:\n', '\n连接：\n'),
+    'vsd_link_label': (' (%s)', '（%s）'),
+    'vsd_anchor': ('\n[Image: page %d, %s]\n', '\n[图：第 %d 页，%s]\n'),
+    'vsd_section': ('Page %d', '第 %d 页'),
     # xlsx file
     'sheet_heading': ('\n## Sheet: %s\n', '\n## 工作表：%s\n'),
     'sheet_rows': ('%d rows\n', '共 %d 行\n'),
@@ -342,9 +355,10 @@ LABELS.update({
                           '共 %d 份。带 ※ 的时间取自文件系统（文档未记录该属性），\n'
                           '拷贝会刷新此时间，如有误伤请核对原文件。\n\n'),
     'rep_filtered_item': ('  • %s\n      modified: %s%s\n', '  • %s\n      修改时间：%s%s\n'),
-    'rep_legacy': ('Need a new format first (.msg)', '需先转格式（.msg）'),
-    'rep_legacy_hint': ('\nSave these mails as .eml in the mail program and run again.\n\n',
-                        '\n请在邮件程序里把这些邮件另存为 .eml，再重新运行。\n\n'),
+    'rep_legacy': ('Need a new format first (.msg, .vsd)', '需先转格式（.msg、.vsd）'),
+    'rep_legacy_hint': ('\nSave mails (.msg) as .eml in the mail program and Visio drawings (.vsd) as .vsdx in Visio,\n'
+                        'then run again.\n\n',
+                        '\n请在邮件程序里把邮件（.msg）另存为 .eml，在 Visio 里把绘图（.vsd）另存为 .vsdx，再重新运行。\n\n'),
     'rep_logs': ('Log per document', '各文档处理日志'),
     'rep_warnings': ('\n%d warnings:\n', '\n警告 %d 条：\n'),
     'kept_note': ('kept from an earlier run', '本轮跳过，沿用已有结果'),
@@ -1388,6 +1402,216 @@ def parse_pptx(path, outdir, report, imgdir=None, img_ref='images',
 
         if shape_only_pages:
             report.warn(T('pptx_shapes', T('list_sep').join(str(x) for x in shape_only_pages)))
+
+    return '\n'.join(md), img_manifest
+
+
+# ================================================================ VSDX (Visio)
+
+VSDX_EXT = ('.vsdx', '.vsdm', '.vssx', '.vssm', '.vstx', '.vstm')
+VSD_NS = 'http://schemas.microsoft.com/office/visio/2012/main'
+VSD_IMG_EXT = ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tif', '.tiff', '.emf', '.wmf', '.svg')
+
+
+def vq(tag):
+    return '{%s}%s' % (VSD_NS, tag)
+
+
+def _vsd_rels(zf, names, part):
+    """{rId: part path} of one package part."""
+    d, b = posixpath.split(part)
+    relpath = posixpath.join(d, '_rels', b + '.rels')
+    out = {}
+    if relpath in names:
+        for rel in ET.fromstring(zf.read(relpath)):
+            out[rel.get('Id')] = resolve_part(d, rel.get('Target'))
+    return out
+
+
+def _vsd_parts(zf, names, index_part, item_tag):
+    """[(element, part path)] of the pages or masters listed in an index part, in its order."""
+    if index_part not in names:
+        return []
+    rels = _vsd_rels(zf, names, index_part)
+    out = []
+    for el in ET.fromstring(zf.read(index_part)).iter(vq(item_tag)):
+        rel = el.find(vq('Rel'))
+        part = rels.get(rel.get('{%s}id' % NS['r'])) if rel is not None else None
+        if part in names:
+            out.append((el, part))
+    return out
+
+
+def _vsd_text(shape):
+    """The shape's own text, or None when it has no Text element (then a master's text applies).
+    Field values are kept; line breaks become spaces, so one shape stays one line."""
+    el = shape.find(vq('Text'))
+    if el is None:
+        return None
+    return ' '.join(''.join(el.itertext()).split())
+
+
+def _vsd_data(shape):
+    """[(label, value)] of the shape data rows that have a value and are not hidden."""
+    out = []
+    for sec in shape.findall(vq('Section')):
+        if sec.get('N') != 'Property':
+            continue
+        for row in sec.findall(vq('Row')):
+            cells = {c.get('N'): c.get('V') or '' for c in row.findall(vq('Cell'))}
+            if cells.get('Invisible') == '1':
+                continue
+            value = cells.get('Value', '').strip()
+            label = (cells.get('Label') or row.get('N') or '').strip()
+            if value and label:
+                out.append((label, value))
+    return out
+
+
+def _vsd_masters(zf, names):
+    """{master ID: {shape ID or '': text}}: the text a shape based on the master inherits."""
+    out = {}
+    for el, part in _vsd_parts(zf, names, 'visio/masters/masters.xml', 'Master'):
+        texts = {}
+        shapes = ET.fromstring(zf.read(part)).find(vq('Shapes'))
+        if shapes is not None:
+            for i, sh in enumerate(shapes.iter(vq('Shape'))):
+                t = _vsd_text(sh) or ''
+                texts[sh.get('ID')] = t
+                if i == 0:
+                    texts[''] = t
+        out[el.get('ID')] = texts
+    return out
+
+
+def _vsd_page(root, masters):
+    """(shapes, connections, foreign rIds) of one page or master.
+    shapes: [(ID, text, data, is connector)] in document order;
+    connections: [(from text, to text, connector text)] where both ends have text."""
+    shapes, info, parent, images = [], {}, {}, []
+
+    def walk(container, master, up):
+        for sh in container.findall(vq('Shape')):
+            sid = sh.get('ID')
+            m = sh.get('Master') or master
+            text = _vsd_text(sh)
+            if text is None:
+                mt = masters.get(m, {})
+                text = mt.get(sh.get('MasterShape') or '', '') if sh.get('Master') or sh.get('MasterShape') else ''
+            info[sid] = text
+            parent[sid] = up
+            shapes.append([sid, text, _vsd_data(sh), False])
+            fd = sh.find(vq('ForeignData'))
+            if fd is not None:
+                rel = fd.find(vq('Rel'))
+                if rel is not None:
+                    images.append(rel.get('{%s}id' % NS['r']))
+            sub = sh.find(vq('Shapes'))
+            if sub is not None:
+                walk(sub, m, sid)
+
+    top = root.find(vq('Shapes'))
+    if top is not None:
+        walk(top, None, None)
+
+    def label(sid):
+        while sid is not None:
+            if info.get(sid):
+                return info[sid]
+            sid = parent.get(sid)
+        return ''
+
+    ends = {}
+    con = root.find(vq('Connects'))
+    for c in (con.findall(vq('Connect')) if con is not None else []):
+        side = {'BeginX': 0, 'EndX': 1}.get(c.get('FromCell'))
+        if side is not None:
+            ends.setdefault(c.get('FromSheet'), [None, None])[side] = c.get('ToSheet')
+    links, used = [], set()
+    order = [s[0] for s in shapes]
+    for cid in sorted(ends, key=lambda x: order.index(x) if x in order else len(order)):
+        a, b = (label(x) if x else '' for x in ends[cid])
+        if a and b:
+            links.append((a, b, info.get(cid, '')))
+            used.add(cid)
+    for s in shapes:
+        s[3] = s[0] in used
+    return shapes, links, images
+
+
+def parse_vsdx(path, outdir, report, imgdir=None, img_ref='images', save_images=True, **_):
+    """Parse a Visio drawing (vsdx and its macro, stencil and template forms): page by page the
+    text and shape data of every shape, the connections between shapes, and the pictures.
+    A file without pages (a stencil) is read master by master."""
+    md = []
+    img_manifest = []
+    if imgdir is None:
+        imgdir = os.path.join(outdir, 'images')
+
+    with zipfile.ZipFile(path) as zf:
+        names = set(zf.namelist())
+        masters = _vsd_masters(zf, names)
+        pages = _vsd_parts(zf, names, 'visio/pages/pages.xml', 'Page')
+        is_stencil = not pages
+        if is_stencil:
+            pages = _vsd_parts(zf, names, 'visio/masters/masters.xml', 'Master')
+        if not pages:
+            report.warn(T('vsd_no_pages'))
+            return '', []
+        report.log(T('vsd_count', len(pages)))
+        if save_images:
+            os.makedirs(imgdir, exist_ok=True)
+        img_counter = 0
+
+        for n, (el, part) in enumerate(pages, 1):
+            name = el.get('Name') or el.get('NameU') or ''
+            if is_stencil:
+                md.append(T('vsd_master_heading', n, name))
+            elif el.get('Background') == '1':
+                md.append(T('vsd_bg_heading', n, name))
+            else:
+                md.append(T('vsd_page_heading', n, name))
+            shapes, links, rids = _vsd_page(ET.fromstring(zf.read(part)), {} if is_stencil else masters)
+            lines = []
+            for _sid, text, data, is_link in shapes:
+                if is_link and not data:
+                    continue
+                if text:
+                    lines.append('- ' + text)
+                elif data:
+                    lines.append('- ' + T('vsd_no_label'))
+                lines.extend('  - %s%s%s' % (k, T('vsd_data_sep'), v) for k, v in data)
+            if lines:
+                md.extend(lines)
+            if links:
+                md.append(T('vsd_links'))
+                md.extend('- %s → %s' % (a, b) + (T('vsd_link_label', t) if t else '') for a, b, t in links)
+            if not lines and not links:
+                md.append(T('vsd_no_text'))
+
+            rels = _vsd_rels(zf, names, part)
+            page_imgs = 0
+            texts = ' '.join(s[1] for s in shapes if s[1])
+            for rid in rids:
+                src = rels.get(rid, '')
+                ext = os.path.splitext(src)[1].lower()
+                if src not in names or ext not in VSD_IMG_EXT:
+                    continue
+                img_counter += 1
+                page_imgs += 1
+                fname = 'page%02d_img%02d%s' % (n, page_imgs, ext)
+                if save_images:
+                    with open(os.path.join(imgdir, fname), 'wb') as f:
+                        f.write(zf.read(src))
+                md.append(T('vsd_anchor', n, image_location(img_ref, fname, save_images)))
+                img_manifest.append({
+                    'no': img_counter,
+                    'file': fname,
+                    'section': T('vsd_section', n),
+                    'orphan': len(texts) < 30,
+                    'ctx_before': '',
+                    'ctx_after': texts[:80],
+                })
 
     return '\n'.join(md), img_manifest
 
@@ -2869,7 +3093,7 @@ def read_doc_modified(path):
     ext = os.path.splitext(path)[1].lower()
     val = ''
 
-    if ext in ('.docx', '.xlsx', '.xlsm', '.pptx'):
+    if ext in ('.docx', '.xlsx', '.xlsm', '.pptx') + VSDX_EXT:
         try:
             with zipfile.ZipFile(path) as zf:
                 if 'docProps/core.xml' in zf.namelist():
@@ -2960,8 +3184,8 @@ def detect_modified(path):
 
 # ================================================================ scanning
 
-SUPPORTED_EXT = ('.docx', '.pptx', '.xlsx', '.xlsm', '.pdf', '.eml', '.doc', '.xls', '.ppt')
-LEGACY_EXT = ('.msg',)
+SUPPORTED_EXT = ('.docx', '.pptx', '.xlsx', '.xlsm', '.pdf', '.eml', '.doc', '.xls', '.ppt') + VSDX_EXT
+LEGACY_EXT = ('.msg', '.vsd')
 
 
 def _date_filter(items, since, time_basis, cache):
@@ -3470,6 +3694,9 @@ def convert(src, ext, md_dir, report, inline_excel=True, imgdir=None, img_ref='i
         return parse_doc(src, md_dir, report)
     if ext == '.ppt':
         return parse_ppt(src, md_dir, report)
+    if ext in VSDX_EXT:
+        return parse_vsdx(src, md_dir, report, imgdir=imgdir, img_ref=img_ref,
+                          save_images=save_images)
     if ext == '.pdf':
         md, manifest = parse_pdf(src, md_dir, report, imgdir=imgdir, img_ref=img_ref,
                                  save_images=save_images)

@@ -8,7 +8,7 @@
 - **Set it and forget it.** An incremental mode for cron converts only what changed since the last run.
 - **Several ways to use it.** Run it in the browser (double-click the launcher), from the command line, or import `doc2kb_core.py` as a library.
 
-Supports `.docx` `.xlsx` `.xlsm` `.pptx` `.pdf` `.eml`, the legacy `.doc` `.xls` `.ppt`, plus archives. Messages and output labels can be English or Chinese.
+Supports `.docx` `.xlsx` `.xlsm` `.pptx` `.pdf` `.eml`, the legacy `.doc` `.xls` `.ppt`, Visio `.vsdx` (with `.vsdm` `.vssx` `.vssm` `.vstx` `.vstm`), plus archives. Messages and output labels can be English or Chinese.
 
 [中文说明](README.zh-CN.md)
 
@@ -51,7 +51,7 @@ Double-click `文档转知识库.desktop`, or run `./doc2kb.sh` without argument
 - **Incremental tasks**: add, edit and delete tasks (name, source folder, output folder), preview them, run the ticked ones or all. A task that never ran takes the documents changed in the last N days (default 30, set on the page). Tasks live in `~/.config/doc2kb/watch_tasks.conf`, the same file earlier versions used. While a task runs the page shows which task, its batch and the document being converted.
 - **Duplicate clean-up**: pick a merged or incremental md, run a dry run, check the report, then clean up (the original is backed up first).
 
-`.msg` files are listed and skipped.
+`.msg` and `.vsd` files are listed and skipped.
 
 Large folders are converted in batches ("Files per batch", default 1000; 0 = one batch), so tens of thousands of documents run at a steady pace. In merged mode each batch becomes a volume, `<name>-01.md`, `<name>-02.md`, …, with `<name>-index.md` naming the volume of each document; duplicates are found across all batches. A cancelled merged run keeps its finished batches: start it again with the same folders and options and it continues with the first unfinished batch (or choose "Start again from the first batch"). Reloading the page shows the running or latest task again with its settings, progress and result.
 
@@ -140,7 +140,8 @@ On the command line: `python3 doc2kb_web.py --upgrade doc2kb-vX.Y.Z.zip` or `./d
 ## Formats
 
 - Supported: `.docx`, `.xlsx`, `.xlsm`, `.pptx`, `.pdf`, `.eml`, and the legacy binary `.doc`, `.xls`, `.ppt` of Office 97 and later (text and tables, no pictures; password-protected and older files are listed as failed).
-- `.msg` does not crash a run: it is listed under "need a new format first".
+- Visio `.vsdx`, `.vsdm`, the stencils `.vssx`, `.vssm` and the templates `.vstx`, `.vstm`: one section per page in the drawing's page order (background pages marked), one line per shape with its text (shapes inside groups too, field values kept, text inherited from the master when the shape has none), the shape data rows with a label as `label: value` (hidden rows left out), the connections whose two ends have text as `A → B (connector text)`, and the pictures. A stencil without pages is read master by master.
+- `.msg` and the legacy binary Visio `.vsd` do not crash a run: they are listed under "need a new format first" (save `.vsd` as `.vsdx` in Visio).
 - Archives: `.zip`, `.tar`, `.tar.gz`/`.tgz`, `.tar.bz2`/`.tbz2`, `.tar.xz`/`.txz` are read like folders. The documents inside appear as `pack.zip/a/report.docx` in the scan, the index and the report, and work with `--only` and incremental tasks; an archive can also be named directly (`python3 doc2kb_core.py pack.zip`). Archives inside archives are opened up to 3 levels deep. Members are unpacked into a private temporary folder that is removed when the run ends; nothing is written next to the archive and member paths never leave it. Encrypted members, members over 512 MB unpacked, more than 2 GB of documents in one archive, damaged archives and `.7z`/`.rar` (no standard-library reader) are listed as failed with the reason. Zip names written by Chinese Windows without the UTF-8 flag are decoded as GBK.
 - Duplicates, within one run: files with identical bytes (SHA-256, archive members included) are parsed once, preferring a copy whose output exists, then one outside any archive, then the first path; files whose extracted text is identical are then kept once (newest document time). Both kinds are listed in the report's "Duplicate files" section and in a note at the top of the kept copy. `-D` keeps every copy. Across runs, incremental tasks skip text already filed (see above).
 - Merged output (index plus every text in one Markdown file) by default; one file per document as an option.
