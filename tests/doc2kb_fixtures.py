@@ -561,3 +561,71 @@ def ppt(path, **kw):
     with open(path, "wb") as f:
         f.write(ppt_bytes(**kw))
     return path
+
+
+# ---------------------------------------------------------------- Visio (vsdx)
+
+VSD = "http://schemas.microsoft.com/office/visio/2012/main"
+
+
+def _vsd_shape(sid, text=None, extra="", inner="", attrs=""):
+    t = "" if text is None else f"<Text>{text}</Text>"
+    return f'<Shape ID="{sid}" {attrs}>{extra}{t}{inner}</Shape>'
+
+
+def _vsd_page(shapes, connects=""):
+    return (f'<?xml version="1.0" encoding="UTF-8"?><PageContents xmlns="{VSD}" xmlns:r="{R}">'
+            f"<Shapes>{shapes}</Shapes>{connects}</PageContents>")
+
+
+def vsdx(path, english=False, stencil=False):
+    """Page 1: two boxes joined by a labelled connector, a group whose child holds the text, a
+    field, shape data (one row hidden), a shape that takes its text from its master and a
+    picture; page 2: empty; page 3: a background page. stencil=True: masters only, no pages."""
+    start, check = ("Start", "Review") if english else ("开始", "审核")
+    decision = _vsd_shape(1, "<cp IX='0'/>Decision")
+    master = (f'<?xml version="1.0" encoding="UTF-8"?><MasterContents xmlns="{VSD}">'
+              f"<Shapes>{decision}</Shapes></MasterContents>")
+    masters = (f'<?xml version="1.0" encoding="UTF-8"?><Masters xmlns="{VSD}" xmlns:r="{R}">'
+               '<Master ID="2" NameU="Decision" Name="Decision"><Rel r:id="rId1"/></Master></Masters>')
+    parts = {
+        "visio/masters/masters.xml": masters,
+        "visio/masters/_rels/masters.xml.rels": _rels([("rId1", "master1.xml")]),
+        "visio/masters/master1.xml": master,
+        "docProps/core.xml": CORE.format("2026-02-03T04:05:06Z"),
+    }
+    if stencil:
+        return _zip(path, parts)
+    data = ('<Section N="Property">'
+            '<Row N="Row_1"><Cell N="Label" V="Owner"/><Cell N="Value" V="Riverside Clinic"/></Row>'
+            '<Row N="Cost"><Cell N="Value" V="12"/></Row>'
+            '<Row N="Row_3"><Cell N="Label" V="Secret"/><Cell N="Value" V="x"/><Cell N="Invisible" V="1"/></Row>'
+            "</Section>")
+    shapes = (_vsd_shape(1, f"<cp IX='0'/>{start}\n", data)
+              + _vsd_shape(2, f"<cp IX='0'/>{check} <fld IX='0'>v2</fld>")
+              + _vsd_shape(3, "<cp IX='0'/>OK")
+              + _vsd_shape(4, inner="<Shapes>" + _vsd_shape(5, "Group child") + "</Shapes>",
+                           attrs='Type="Group"')
+              + _vsd_shape(6, attrs='Master="2"')
+              + _vsd_shape(7, extra='<ForeignData ForeignType="Bitmap"><Rel r:id="rId1"/></ForeignData>',
+                           attrs='Type="Foreign"')
+              + _vsd_shape(8, attrs='Type="Shape"'))
+    connects = ('<Connects><Connect FromSheet="3" FromCell="BeginX" ToSheet="1"/>'
+                '<Connect FromSheet="3" FromCell="EndX" ToSheet="2"/>'
+                '<Connect FromSheet="8" FromCell="BeginX" ToSheet="2"/>'
+                '<Connect FromSheet="8" FromCell="EndX" ToSheet="5"/></Connects>')
+    pages = (f'<?xml version="1.0" encoding="UTF-8"?><Pages xmlns="{VSD}" xmlns:r="{R}">'
+             '<Page ID="0" NameU="Flow" Name="Flow"><Rel r:id="rId2"/></Page>'
+             '<Page ID="4" NameU="Empty"><Rel r:id="rId1"/></Page>'
+             '<Page ID="5" NameU="Back" Background="1"><Rel r:id="rId3"/></Page></Pages>')
+    parts.update({
+        "visio/pages/pages.xml": pages,
+        "visio/pages/_rels/pages.xml.rels": _rels([("rId1", "page2.xml"), ("rId2", "page1.xml"),
+                                                   ("rId3", "page3.xml")]),
+        "visio/pages/page1.xml": _vsd_page(shapes, connects),
+        "visio/pages/_rels/page1.xml.rels": _rels([("rId1", "../media/image1.png")]),
+        "visio/pages/page2.xml": _vsd_page(""),
+        "visio/pages/page3.xml": _vsd_page(_vsd_shape(1, "Footer")),
+        "visio/media/image1.png": png(200, 100, 60),
+    })
+    return _zip(path, parts)

@@ -64,7 +64,11 @@ Required: current Office formats (word processing, spreadsheet, presentation), t
 formats of Office 97 and later (`.doc`, `.xls`, `.ppt`, section 3.4a), PDF, and the standard mail archive
 format (MIME mail, usually `.eml`).
 
-Explicitly **not** supported: mail clients' private binary formats (such as `.msg`). They do not crash the
+Also required: Visio drawings in their current form (`.vsdx`, with the macro, stencil and template forms,
+section 3.4b).
+
+Explicitly **not** supported: mail clients' private binary formats (such as `.msg`) and the legacy binary
+Visio format (`.vsd`). They do not crash the
 run: they are recognised, skipped, and listed in the report under "need a new format first", asking the
 user to save them in a current format.
 
@@ -88,7 +92,7 @@ index and the report. An archive named directly on the command line stands for i
   the documents of one archive at most 2 GB together. Members over a limit are not opened.
 - **Not readable**: encrypted members, damaged archives, archives over the limits and formats that need a
   third-party tool (`.7z`, `.rar`) are listed as failed with the reason; the rest of the archive and the
-  batch go on. Unsupported legacy formats (`.msg`) inside an archive go to "need a new format first" as usual.
+  batch go on. Unsupported legacy formats (`.msg`, `.vsd`) inside an archive go to "need a new format first" as usual.
 - **Names**: zip files made on Chinese Windows store GBK names without the UTF-8 flag; decode them as GBK
   so the paths are readable. Hidden entries and the `__MACOSX` folder are skipped, like hidden files.
 - **Times**: a member's file system time is its time stored in the archive. For change detection
@@ -165,6 +169,25 @@ standard library and take the text; the output has the same shape as for the cur
 - **Metadata**: the summary information property set gives the author, the last saved by and the last saved
   time (section 5.4).
 
+### 3.4b Visio drawings
+
+`.vsdx`, `.vsdm` (with macros), `.vssx`, `.vssm` (stencils) and `.vstx`, `.vstm` (templates) are zip
+packages of XML like the current Office formats.
+
+- **Pages** in the order of the drawing's page list (not the order of the part names), each with its
+  number and name; a background page is marked as one. A page without text, data or connections says so.
+- **Shapes** in document order, one line each, groups included: the shape's text with its field values,
+  line breaks joined into one line. A shape without its own text takes the text of the master shape it is
+  based on.
+- **Shape data**: rows with a value and a label (or a row name) are listed under the shape as
+  `label: value`; hidden rows are left out; a shape with data and no text gets a placeholder line.
+- **Connections**: a connector whose begin and end are glued to shapes with text (a shape without text
+  counts with the text of the group around it) gives one line `A → B`, with the connector's own text in
+  brackets; such a connector is not listed again as a shape.
+- **Pictures**: bitmaps and metafiles placed on a page are exported and anchored as in 4.1.
+- **Stencils** without pages are read master by master.
+- **Metadata**: the core properties, as for the current Office formats (sections 5.4 and 5.6).
+
 ### 3.5 Expanding embedded attachments
 
 Word processing documents often embed spreadsheets or sub-documents. These attachments frequently carry
@@ -205,7 +228,7 @@ declares one encoding and uses another, so try candidate encodings in turn.
 **Attachments**: **not read**; a list below the body records them. Requirements:
 
 - a table with number, attachment name, size and type
-- three types: can be converted separately, legacy binary format that needs converting first (`.msg`), unsupported
+- three types: can be converted separately, legacy binary format that needs converting first (`.msg`, `.vsd`), unsupported
 - a note before the list saying the attachments were not read and how to get their content (save the
   attachment from the mail and convert that file)
 - no section when there are no attachments
@@ -467,7 +490,7 @@ duplicate handling and reports:
   `out_name` carrying the volume number (`<name>-01`, …); the `file_of` maps are combined and each
   `finish` is called in turn.
 - `doc_authors(path)` returns `(author, last modified by)` as recorded in a document: the core properties
-  of docx, xlsx and pptx, the summary information of legacy Office files, the PDF Author entry (with
+  of docx, xlsx, pptx and vsdx, the summary information of legacy Office files, the PDF Author entry (with
   pdfinfo) and the sender of a mail; an empty string where there is none.
 
 ---
@@ -751,7 +774,11 @@ missing, what to install, or which alternative to use) instead of failing halfwa
     with a reason; no temporary files remain after the run
 7. Legacy binary formats: `.doc`, `.xls` and `.ppt` are converted (shared strings cut across records,
    dates, formula text, a table cell with two paragraphs, field results, slides in slide-list order without
-   older copies); encrypted ones are listed as failed; `.msg` is listed under "need a new format first"
+   older copies); encrypted ones are listed as failed; `.msg` and `.vsd` are listed under "need a new format
+   first"
+7a. Visio: pages in page-list order with a background page marked; shape text with field values, group
+    children and master text; labelled shape data without hidden rows; connections as `A → B (text)`;
+    pictures exported; a stencil read by masters
 8. Damaged or encrypted files: no crash, listed as failed, other files unaffected
 
 ### 8.2 Output structure

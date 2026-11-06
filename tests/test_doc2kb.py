@@ -408,6 +408,44 @@ class LegacyOfficeTest(Tmp):
         self.assertIn("password protected", read(self.p("out", "_batch-report.txt")))
 
 
+class VisioTest(Tmp):
+    def test_vsdx(self):
+        src = fx.vsdx(self.p("flow.vsdx"), english=True)
+        report = core.Report()
+        md, manifest = core.convert(src, ".vsdx", self.p("out"), report, imgdir=self.p("img"))
+        self.assertTrue(md.startswith("\n## Page 1: Flow\n\n- Start\n  - Owner: Riverside Clinic\n  - Cost: 12\n"
+                                      "- Review v2\n- Group child\n- Decision\n"))   # field value, group, master text
+        self.assertNotIn("Secret", md)                                      # hidden shape data row
+        self.assertNotIn("- OK", md)                                        # connector text only on its link
+        self.assertIn("Connections:\n\n- Start → Review v2 (OK)\n- Review v2 → Group child\n", md)
+        self.assertIn("[Image: page 1, see images/page01_img01.png]", md)
+        self.assertIn("## Page 2: Empty\n\n*(no text on this page)*", md)     # pages.xml order, not part names
+        self.assertIn("## Page 3: Back (background)\n\n- Footer", md)
+        self.assertEqual([m["file"] for m in manifest], ["page01_img01.png"])
+        self.assertTrue(os.path.isfile(self.p("img", "page01_img01.png")))
+        self.assertEqual(report.warnings, [])
+        self.assertEqual(core.read_doc_modified(src), ("2026-02-03 04:05", "doc"))
+
+    def test_stencil_and_chinese(self):
+        core.set_lang("zh")
+        md, _ = core.convert(fx.vsdx(self.p("s.vssx"), stencil=True), ".vssx", self.d, core.Report(),
+                             save_images=False)
+        self.assertEqual(md, "\n## 主控形状 1：Decision\n\n- Decision")
+        md, _ = core.convert(fx.vsdx(self.p("f.vsdm")), ".vsdm", self.d, core.Report(), save_images=False)
+        self.assertIn("## 第 1 页：Flow\n\n- 开始\n  - Owner：Riverside Clinic", md)
+        self.assertIn("连接：\n\n- 开始 → 审核 v2（OK）", md)
+        self.assertIn("[图：第 1 页，", md)
+
+    def test_vsd_is_legacy(self):
+        os.makedirs(self.p("src"))
+        fx.vsdx(self.p("src", "a.vsdx"))
+        with open(self.p("src", "old.vsd"), "wb") as f:
+            f.write(bytes.fromhex("d0cf11e0a1b11ae1") + bytes(600))
+        ok, legacy, _ = core.scan_dir(self.p("src"))
+        self.assertEqual([it["rel"] for it in ok], ["a.vsdx"])
+        self.assertEqual([it["rel"] for it in legacy], ["old.vsd"])
+
+
 class DedupToolTest(Tmp):
     def make(self, lang):
         src = self.p(lang, "src")
