@@ -44,16 +44,18 @@ Messages and the labels written into the output (headings, notes, table headers)
 
 ### Browser
 
-Double-click `文档转知识库.desktop`, or run `./doc2kb.sh` without arguments (or `python3 doc2kb_web.py`). The page opens in the browser with four tabs:
+Double-click `文档转知识库.desktop`, or run `./doc2kb.sh` without arguments (or `python3 doc2kb_web.py`). The page opens in the browser with four tabs; switching tabs keeps each tab's state:
 
-- **Folder batch**: choose the source folder (type the path or use "Browse…"), optionally a date, and press "Scan"; untick the files you do not want; check the output folder (default `<source>/_doc2kb`, `_知识库` in Chinese) and the options, then "Start". The result shows the summary and the report; "Open output folder" opens it.
+- **Folder batch**, in three steps: 1 choose the source folder (type the path or use "Browse…"), optionally a date, and press "Scan"; 2 untick the files you do not want; 3 check the output folder (default `<source>/_doc2kb`, `_知识库` in Chinese), the output mode (merge into one md, or one md per document) and the options. Steps 2 and 3 open after the scan. The summary on the right shows source, ticked files, output and mode, with the start button "Convert N documents". The result shows converted, duplicate and failed documents and the character count, the summary and the report; "Open output folder" opens it.
 - **Chosen files**: add documents or archives from one or more folders and start; they are always converted again (you are asked before md files of the same name are replaced).
-- **Incremental tasks**: add, edit and delete tasks (name, source folder, output folder), preview them, run the ticked ones or all. A task that never ran takes the documents changed in the last N days (default 30, set on the page). Tasks live in `~/.config/doc2kb/watch_tasks.conf`, the same file earlier versions used. While a task runs the page shows which task, its batch and the document being converted.
-- **Duplicate clean-up**: pick a merged or incremental md, run a dry run, check the report, then clean up (the original is backed up first).
+- **Incremental tasks**: each task is a card with its source → output folder and last run, and a status dot (green: has run, grey: not run yet, yellow: source folder missing). Add, edit and delete tasks (name, source folder, output folder), preview them, run the ticked ones or all. A task that never ran takes the documents changed in the last N days (default 30, set on the page). Tasks live in `~/.config/doc2kb/watch_tasks.conf`, the same file earlier versions used. While a task runs the page shows which task, its batch and the document being converted.
+- **Duplicate clean-up**, in three stages shown at the top: dry run (read only), check the report, clean up. "Clean up" becomes available only after a dry run that found duplicates; the original is backed up first as `<file>.bak-<date>-<time>`.
 
 `.msg` and `.vsd` files are listed and skipped.
 
 Large folders are converted in batches ("Files per batch", default 1000; 0 = one batch), so tens of thousands of documents run at a steady pace. In merged mode each batch becomes a volume, `<name>-01.md`, `<name>-02.md`, …, with `<name>-index.md` naming the volume of each document; duplicates are found across all batches. A cancelled merged run keeps its finished batches: start it again with the same folders and options and it continues with the first unfinished batch (or choose "Start again from the first batch"). Reloading the page shows the running or latest task again with its settings, progress and result.
+
+While a task runs, a bar under the title shows what runs, the current document, N of M and Cancel. Confirmations (replacing md files, deleting a task, cleaning up, quitting during a task) open in the page. The page has a 中 / EN switch (the service's language is the default), a light and a dark theme, and Upgrade and Roll back in the "⋯" menu.
 
 Pictures are not exported unless "Export images" is ticked. The service listens on 127.0.0.1 only, with a one-time token in the address, and exits a few seconds after the last page is closed; "Quit" stops it at once. A run in progress is finished first. Paths are chosen in a folder list the service provides, not with the browser's file picker, because conversions need the real paths. To keep the launcher on the desktop, put a link to it there (right-click it in the file manager and send it to the desktop), not a copy. Since 2.3.0 the launcher is called `文档转知识库.desktop` instead of `双击运行.desktop`, so it no longer clashes with other tools' launchers on the desktop; a link placed on the desktop earlier stops working and has to be sent to the desktop again from the tool folder. The service logs to `doc2kb_web.log` next to it (or `~/.cache/doc2kb/` when that folder is read-only).
 
@@ -126,7 +128,7 @@ python3 doc2kb_dedup.py OUTPUT/Documents_20261007_incremental.md
 Unpack the first release into a folder of your choice that you will keep and send the launcher to the desktop from there. Later releases replace that folder's contents in place, so the path does not change and desktop links keep working.
 
 1. Download the new release zip (or unpack it and use the `doc2kb` folder inside).
-2. On the page, choose Upgrade beside Quit and pick or drop the zip or the folder. The check shows current version → new version, the changes between the two from CHANGELOG.md, the files kept and any extra files; a downgrade or reinstall is called out.
+2. On the page, open the "⋯" menu, choose Upgrade, and pick or drop the zip or the folder. The check shows current version → new version, the changes between the two from CHANGELOG.md, the files kept and any extra files; a downgrade or reinstall is called out.
 3. Choose Upgrade to vX.Y.Z. Stage text is shown while it runs and the buttons are disabled; a running task is waited for. The service then starts again on the new version at the same address and the page reconnects.
 
 On the command line: `python3 doc2kb_web.py --upgrade doc2kb-vX.Y.Z.zip` or `./doc2kb.sh --upgrade doc2kb-vX.Y.Z.zip` shows the same check and asks (`--yes` skips the question).
