@@ -78,9 +78,22 @@ async function noScroll(page, what) {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= 360), 'horizontal scroll at 360px: ' + what);
 }
 
-async function nextDialog(dialogs, before) {
-  // the dialog event may arrive after click() returns
-  for (let i = 0; i < 100 && dialogs.length <= before; i++) await new Promise(r => setTimeout(r, 50));
+// the upgrade entry sits in the "⋯" menu: open the menu first when the item is not visible
+async function openUpgrade(page) {
+  if (!(await page.isVisible('#up-open'))) await page.click('[data-menu-btn]');
+  await page.click('#up-open');
+}
+
+// confirmations use the page's own dialog (#ask): return its text and confirm
+async function confirmText(page, dialogs, before) {
+  for (let i = 0; i < 100 && dialogs.length <= before; i++) {
+    if (await page.isVisible('#ask').catch(() => false)) {
+      const text = (await page.textContent('#ask-title')) + ' ' + (await page.textContent('#ask-text'));
+      await page.click('#ask-ok');
+      return text;
+    }
+    await new Promise(r => setTimeout(r, 50));
+  }
   return dialogs[dialogs.length - 1] || '';
 }
 
@@ -105,7 +118,7 @@ async function nextDialog(dialogs, before) {
     }));
     await page.goto(srv.url);
     await page.waitForFunction(() => document.getElementById('up-open').textContent === '升级');
-    await page.click('#up-open');
+    await openUpgrade(page);
     assert.ok(await page.isVisible('#upgrade'));
     await page.waitForFunction(() => document.getElementById('up-rollback').title !== '');
     assert.ok(await page.isDisabled('#up-rollback'), 'no previous version yet');
@@ -138,7 +151,7 @@ async function nextDialog(dialogs, before) {
     const loaded = page.waitForEvent('load', {timeout: 60000});
     const nDialogsGo = dialogs.length;
     await page.click('#up-go');
-    assert.match(await nextDialog(dialogs, nDialogsGo), /多出来的文件/);
+    assert.match(await confirmText(page, dialogs, nDialogsGo), /多出来的文件/);
     assert.ok(await page.isDisabled('#up-go'), 'the button is disabled while upgrading');
     assert.ok(await page.isDisabled('#up-rollback'));
     await loaded;
@@ -152,12 +165,12 @@ async function nextDialog(dialogs, before) {
     await page.waitForFunction(v => document.getElementById('version').textContent.includes(v.slice(1)), ctx.newVer);
     assert.ok(fs.existsSync(path.join(ctx.work, 'apps', '.doc2kb.上一版', 'my-notes.txt')));
 
-    await page.click('#up-open');
+    await openUpgrade(page);
     await page.waitForFunction(() => !document.getElementById('up-rollback').disabled);
     const back = page.waitForEvent('load', {timeout: 60000});
     const nDialogsRollback = dialogs.length;
     await page.click('#up-rollback');
-    assert.ok((await nextDialog(dialogs, nDialogsRollback)).includes('会把当前 ' + ctx.newVer + ' 换成上一版 ' + ctx.oldVer), dialogs.join('|'));
+    assert.ok((await confirmText(page, dialogs, nDialogsRollback)).includes('会把当前 ' + ctx.newVer + ' 换成上一版 ' + ctx.oldVer), dialogs.join('|'));
     await back;
     const st2 = await page.evaluate(t => fetch('/api/upgrade', {headers: {'X-Token': t}}).then(r => r.json()), token);
     assert.strictEqual(st2.current, ctx.oldVer);
@@ -170,12 +183,13 @@ async function nextDialog(dialogs, before) {
     const p2 = await (await browser.newContext({bypassCSP: true})).newPage();
     await p2.goto(srv.url);
     await p2.waitForFunction(() => document.getElementById('up-open').textContent === 'Upgrade');
-    await p2.click('#up-open');
+    await openUpgrade(p2);
     assert.strictEqual(await p2.textContent('#up-rollback'), 'Roll back to previous version');
     await p2.setInputFiles('#up-file', ctx.zip);
     await p2.waitForFunction(() => /new version/.test(document.getElementById('up-report').textContent));
     assert.match(await p2.textContent('#up-go'), /^Upgrade to v/);
     // quitting removes a checked zip that was never applied
+    await p2.keyboard.press('Escape');   // close the upgrade dialog first
     await p2.click('#quit');
     await new Promise(resolve => srv.proc.on('exit', resolve));
     assert.deepStrictEqual(leftUploads(), []);

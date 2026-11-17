@@ -2,350 +2,1108 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>doc2kb</title>
+<script>try{var t=localStorage.getItem('edi-theme');document.documentElement.setAttribute('data-theme',t||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'));}catch(e){}</script>
 <style>
-  :root { --bg:#f6f7f9; --card:#fff; --text:#1f2328; --muted:#656d76; --line:#d0d7de; --accent:#0969da; --ok:#1a7f37; --warn:#9a6700; --bad:#cf222e; --focus:#0969da; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#0d1117; --card:#161b22; --text:#e6edf3; --muted:#8d96a0; --line:#30363d; --accent:#4493f8; --ok:#3fb950; --warn:#d29922; --bad:#f85149; --focus:#4493f8; }
-  }
-  * { box-sizing:border-box; }
-  [hidden] { display:none !important; }
-  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.6 "Noto Sans CJK SC","WenQuanYi Micro Hei","PingFang SC","Microsoft YaHei",sans-serif; }
-  main { max-width:960px; margin:0 auto; padding:20px 16px 40px; }
-  header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-  h1 { font-size:22px; margin:0; }
-  h2 { font-size:17px; margin:0 0 10px; }
-  h3 { font-size:15px; margin:14px 0 6px; }
-  .sub, .hint { color:var(--muted); }
-  .sub { margin:4px 0 12px; }
-  .hint { font-size:13px; margin:6px 0 0; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin:12px 0; }
-  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
-  .row > input[type=text] { flex:1 1 220px; min-width:0; }
-  label.field { display:block; color:var(--muted); margin:8px 0 4px; }
-  input[type=text], input[type=date], input[type=number], select, textarea { padding:7px 10px; font:inherit; font-size:14px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--text); max-width:100%; }
-  input[type=number] { width:6em; }
-  textarea { width:100%; min-height:4em; font-family:"Noto Sans Mono CJK SC","DejaVu Sans Mono",monospace; font-size:13px; }
-  .check { display:flex; gap:8px; align-items:flex-start; margin:6px 0; }
-  .check input { margin-top:5px; flex:none; }
-  .check span small { display:block; color:var(--muted); font-size:13px; }
-  .actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
-  button { padding:7px 14px; font:inherit; font-size:14px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--text); cursor:pointer; }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
-  button.small { padding:2px 8px; font-size:13px; }
-  button:disabled { opacity:.5; cursor:default; }
-  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
-  [role=tablist] { display:flex; flex-wrap:wrap; gap:4px; border-bottom:1px solid var(--line); margin:8px 0 0; }
-  [role=tab] { border:1px solid transparent; border-bottom:none; border-radius:6px 6px 0 0; background:none; color:var(--muted); margin-bottom:-1px; }
-  [role=tab][aria-selected=true] { background:var(--card); border-color:var(--line); color:var(--text); font-weight:bold; }
-  .status { margin:8px 0 0; min-height:1.6em; white-space:pre-wrap; }
-  .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); } .info { color:var(--accent); }
-  pre, .mono { font:13px/1.5 "Noto Sans Mono CJK SC","DejaVu Sans Mono",monospace; }
-  pre { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:8px 10px; margin:8px 0 0; max-height:360px; overflow:auto; white-space:pre-wrap; word-break:break-all; }
-  .scroll { overflow-x:auto; max-height:420px; overflow-y:auto; border:1px solid var(--line); border-radius:6px; margin-top:8px; }
-  table { width:100%; border-collapse:collapse; font-size:14px; }
-  th, td { text-align:left; padding:4px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
-  th { color:var(--muted); font-weight:normal; position:sticky; top:0; background:var(--card); }
-  td.rel { word-break:break-all; min-width:12em; }
-  td.wrap, .wrap { word-break:break-all; }
-  td.name { min-width:6em; overflow-wrap:anywhere; }
-  td.num { text-align:right; white-space:nowrap; }
-  td.act { white-space:nowrap; }
-  .browser { border:1px solid var(--line); border-radius:6px; padding:8px; margin-top:8px; background:var(--bg); }
-  .browser ul { list-style:none; margin:6px 0; padding:0; max-height:260px; overflow:auto; }
-  .browser li > button { width:100%; text-align:left; border:none; background:none; padding:4px 6px; word-break:break-all; }
-  .browser li > button:hover { background:var(--card); }
-  .browser li label { display:flex; gap:6px; align-items:flex-start; padding:2px 6px; word-break:break-all; }
-  .browser li label input { margin-top:5px; flex:none; }
-  progress { width:100%; height:14px; margin-top:8px; }
-  details summary { cursor:pointer; margin-top:8px; }
-  footer { color:var(--muted); font-size:13px; margin-top:24px; border-top:1px solid var(--line); padding-top:10px; }
-  #closed { background:var(--card); border:1px solid var(--bad); color:var(--bad); border-radius:8px; padding:12px; margin-top:12px; }
-  .vh { position:absolute !important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
-  .tools { display:flex; gap:8px; flex-wrap:wrap; }
-  .drop:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
-  #upgrade { display:none; }
-  #upgrade.open { display:block; }
-  .drop { display:block; white-space:normal; border:2px dashed var(--line); border-radius:8px; padding:16px 12px; text-align:center; cursor:pointer; color:var(--muted); margin:8px 0; }
-  .drop.over { border-color:var(--accent); color:var(--text); }
-  .drop strong { color:var(--accent); }
-  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:8px; }
-  .ustatus { margin:8px 0; min-height:1.6em; }
-  .ustatus.ok { color:var(--ok); } .ustatus.warn { color:var(--warn); } .ustatus.bad { color:var(--bad); } .ustatus.info { color:var(--muted); }
-  .ureport h3 { font-size:15px; margin:12px 0 4px; }
-  .ureport ul { margin:0; padding-left:1.4em; max-height:14em; overflow:auto; overflow-wrap:anywhere; }
-  .ureport .ver { font-size:16px; font-weight:bold; }
-  .ureport .warnbox { color:var(--warn); border:1px solid var(--warn); border-radius:6px; padding:6px 10px; margin:8px 0; }
-  #upgrade.card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin:12px 0; }
-  #upgrade h2 { font-size:17px; margin:0 0 8px; }
-  #upgrade .hint { color:var(--muted); font-size:13px; margin:0; }
-  #upgrade .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:8px; }
-  #upgrade button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
-  #upgrade button:disabled { opacity:.5; cursor:default; }
+/* ============================================================
+   EDI 工具集 · 设计系统 kit.css  v1.0
+   全部为原生 CSS，无外部依赖，可直接内联进单文件页面
+   ============================================================ */
+
+:root{
+  color-scheme: light;
+  /* 画布与表面 */
+  --canvas:#f6f4ef;
+  --canvas-2:#f1eee7;
+  --surface:#ffffff;
+  --surface-2:#fbf9f5;
+  --surface-3:#f0ece4;
+  --line:#e5e0d4;
+  --line-2:#d2cbbb;
+  /* 文字 */
+  --ink:#1e2220;
+  --ink-2:#4b524d;
+  --muted:#79736a;
+  --faint:#a49d91;
+  /* 主色 · 砚青 */
+  --primary:#0e6e72;
+  --primary-hover:#0a5a5e;
+  --primary-press:#08494c;
+  --primary-ink:#ffffff;
+  --primary-tint:#e6f1f0;
+  --primary-line:#bcd9d7;
+  --primary-faint:#d9eae9;
+  --row-sel:#eff6f5;
+  /* 语义色 */
+  --ok:#2c7a52;      --ok-tint:#e8f3ed;    --ok-line:#c4e0d1;
+  --warn:#9c6a12;    --warn-tint:#fbf1dd;  --warn-line:#ebd5ab;
+  --danger:#ab3a2e;  --danger-tint:#fbe9e6;--danger-line:#eec5bf;
+  --info:#2b5f8c;    --info-tint:#e9f0f7;  --info-line:#c6d9ea;
+  /* 阴影与圆角 */
+  --shadow-1:0 1px 2px rgba(38,32,22,.055);
+  --shadow-2:0 10px 24px -14px rgba(38,32,22,.30), 0 2px 6px rgba(38,32,22,.05);
+  --shadow-3:0 28px 70px -28px rgba(30,24,15,.40), 0 8px 20px -12px rgba(30,24,15,.20);
+  --r-xs:5px; --r-sm:7px; --r-md:9px; --r-lg:12px; --r-xl:16px;
+  /* 字体 */
+  --font:"Noto Sans CJK SC","Source Han Sans SC","WenQuanYi Micro Hei","PingFang SC","Microsoft YaHei",system-ui,-apple-system,sans-serif;
+  --mono:"Noto Sans Mono CJK SC","Sarasa Mono SC","DejaVu Sans Mono",ui-monospace,SFMono-Regular,monospace;
+  /* 节奏 */
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-8:32px; --sp-10:40px;
+  --appbar-h:60px;
+  --ring:0 0 0 3px rgba(14,110,114,.20);
+  --ring-danger:0 0 0 3px rgba(171,58,46,.18);
+}
+
+[data-theme="dark"]{
+  color-scheme: dark;
+  --canvas:#14161a;
+  --canvas-2:#191c20;
+  --surface:#1c1f24;
+  --surface-2:#22262c;
+  --surface-3:#282d34;
+  --line:#2e343b;
+  --line-2:#3e4750;
+  --ink:#eae7e0;
+  --ink-2:#c0bbb2;
+  --muted:#938d83;
+  --faint:#6f6a62;
+  --primary:#4fb3b7;
+  --primary-hover:#66c3c6;
+  --primary-press:#86d2d5;
+  --primary-ink:#08292b;
+  --primary-tint:#16302f;
+  --primary-line:#2b5453;
+  --primary-faint:#1f3a39;
+  --row-sel:rgba(79,179,183,.10);
+  --ok:#5fbc8b;      --ok-tint:#172c24;    --ok-line:#2b5743;
+  --warn:#dca94f;    --warn-tint:#2e2718;  --warn-line:#5a4a26;
+  --danger:#e5796a;  --danger-tint:#2f1d1b;--danger-line:#5c322d;
+  --info:#7fabd6;    --info-tint:#182530;  --info-line:#2c465c;
+  --shadow-1:0 1px 2px rgba(0,0,0,.4);
+  --shadow-2:0 12px 26px -16px rgba(0,0,0,.7), 0 2px 6px rgba(0,0,0,.35);
+  --shadow-3:0 30px 80px -30px rgba(0,0,0,.8), 0 10px 24px -14px rgba(0,0,0,.6);
+  --ring:0 0 0 3px rgba(79,179,183,.26);
+  --ring-danger:0 0 0 3px rgba(229,121,106,.24);
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--canvas); color:var(--ink);
+  font-family:var(--font); font-size:14px; line-height:1.65;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+}
+h1,h2,h3,h4,p,figure{margin:0}
+button,input,select,textarea{font:inherit; color:inherit}
+button{cursor:pointer; background:none; border:0; padding:0}
+a{color:var(--primary); text-decoration:none}
+a:hover{text-decoration:underline}
+svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+code,pre,.mono{font-family:var(--mono); font-size:12.5px; font-variant-ligatures:none}
+::selection{background:var(--primary-tint); color:var(--ink)}
+:focus-visible{outline:2px solid var(--primary); outline-offset:2px; border-radius:4px}
+[hidden]{display:none !important}
+.num{font-variant-numeric:tabular-nums}
+.tnum{font-variant-numeric:tabular-nums}
+.dim{color:var(--muted)}
+.mono-sm{font-family:var(--mono); font-size:12px; color:var(--muted)}
+
+/* 滚动条 */
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-thumb{background:var(--line-2); border-radius:99px; border:3px solid transparent; background-clip:content-box}
+*::-webkit-scrollbar-thumb:hover{background:var(--faint); background-clip:content-box; border:3px solid transparent}
+*::-webkit-scrollbar-track{background:transparent}
+
+/* ============ 应用外壳 ============ */
+.appbar{
+  position:sticky; top:0; z-index:60;
+  display:flex; align-items:center; gap:16px;
+  height:var(--appbar-h); padding:0 24px;
+  background:var(--surface);
+  border-bottom:1px solid var(--line);
+}
+.appbar__id{display:flex; align-items:center; gap:12px; min-width:0; flex:1}
+.appbar h1{font-size:16px; font-weight:600; letter-spacing:.01em; line-height:1.3; white-space:nowrap}
+.appbar__sub{font-size:12.5px; color:var(--muted); line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+@media (max-width:980px){.appbar__sub{display:none}}
+.appbar__actions{display:flex; align-items:center; gap:6px; flex:none}
+.appbar__divider{width:1px; height:20px; background:var(--line); margin:0 4px}
+
+.mark{
+  display:grid; place-items:center; width:32px; height:32px; flex:none;
+  border-radius:9px; background:var(--primary-tint); color:var(--primary);
+  border:1px solid var(--primary-line);
+}
+.mark svg{width:18px;height:18px;stroke-width:1.7}
+.mark--plain{background:var(--surface-3); border-color:var(--line); color:var(--ink-2)}
+
+.page{max-width:1240px; margin:0 auto; padding:22px 24px 72px}
+.page--wide{max-width:1360px}
+.page__head{display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:18px}
+.page__title{font-size:20px; font-weight:600; letter-spacing:-.01em}
+.page__desc{color:var(--muted); font-size:13px; margin-top:2px; max-width:64ch}
+.grid-main{display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:20px; align-items:start}
+.grid-main--even{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.rail{position:sticky; top:calc(var(--appbar-h) + 20px); display:grid; gap:14px}
+@media (max-width:1080px){
+  .grid-main,.grid-main--even{grid-template-columns:minmax(0,1fr)}
+  .rail{position:static}
+}
+
+/* ============ 卡片 ============ */
+.card{
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg);
+  box-shadow:var(--shadow-1);
+}
+.card__head{display:flex; align-items:center; gap:12px; padding:14px 18px; border-bottom:1px solid var(--line)}
+.card__head h2{font-size:14.5px; font-weight:600; letter-spacing:.01em}
+.card__head .spacer{flex:1}
+.card__body{padding:18px}
+.card__body--flush{padding:0}
+.card__foot{display:flex; align-items:center; gap:10px; padding:12px 18px; border-top:1px solid var(--line); background:var(--surface-2); border-radius:0 0 var(--r-lg) var(--r-lg)}
+.card--quiet{box-shadow:none; background:var(--surface-2)}
+.card--flat{box-shadow:none}
+
+/* ============ 步骤 ============ */
+.step{
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg);
+  box-shadow:var(--shadow-1); overflow:hidden; transition:border-color .16s ease, box-shadow .16s ease;
+}
+.step + .step{margin-top:14px}
+.step.is-active{border-color:var(--line-2)}
+.step__head{display:flex; align-items:center; gap:12px; padding:15px 18px}
+.step__num{
+  display:grid; place-items:center; width:24px; height:24px; flex:none;
+  border-radius:8px; background:var(--surface-3); color:var(--muted);
+  font-size:12px; font-weight:600; font-variant-numeric:tabular-nums;
+  border:1px solid var(--line);
+}
+.step.is-active .step__num{background:var(--primary); border-color:var(--primary); color:var(--primary-ink)}
+.step.is-done .step__num{background:var(--ok-tint); border-color:var(--ok-line); color:var(--ok)}
+.step.is-done .step__num svg{width:14px;height:14px;stroke-width:2}
+.step__title{font-size:14.5px; font-weight:600; letter-spacing:.01em}
+.step__meta{font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums}
+.step__head .grow{flex:1}
+.step__body{padding:0 18px 18px}
+.step.is-done .step__body{padding-top:0}
+.step__summary{display:flex; flex-wrap:wrap; gap:6px 10px; padding:0 18px 16px; color:var(--ink-2); font-size:13px}
+.step__summary .chips{width:100%}
+
+/* ============ 按钮 ============ */
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:7px;
+  height:34px; padding:0 13px; border-radius:var(--r-md);
+  border:1px solid var(--line-2); background:var(--surface); color:var(--ink);
+  font-size:13.5px; font-weight:500; letter-spacing:.01em; white-space:nowrap;
+  box-shadow:var(--shadow-1); transition:background .13s ease, border-color .13s ease, transform .08s ease, box-shadow .13s ease;
+  user-select:none;
+}
+.btn svg{width:16px;height:16px}
+.btn:hover{background:var(--surface-2); border-color:var(--faint)}
+.btn:active{transform:translateY(.5px); box-shadow:none}
+.btn:disabled,.btn[aria-disabled="true"]{opacity:.45; cursor:not-allowed; transform:none; box-shadow:none}
+.btn--primary{
+  background:var(--primary); border-color:var(--primary); color:var(--primary-ink);
+  box-shadow:0 1px 2px rgba(14,110,114,.24), inset 0 1px 0 rgba(255,255,255,.10);
+  font-weight:600;
+}
+.btn--primary:hover{background:var(--primary-hover); border-color:var(--primary-hover)}
+.btn--primary:active{background:var(--primary-press); border-color:var(--primary-press)}
+.btn--ghost{background:transparent; border-color:transparent; box-shadow:none; color:var(--ink-2)}
+.btn--ghost:hover{background:var(--surface-3); border-color:transparent; color:var(--ink)}
+.btn--quiet{background:var(--surface-2); border-color:var(--line)}
+.btn--danger{color:var(--danger); border-color:var(--danger-line); background:var(--surface)}
+.btn--danger:hover{background:var(--danger-tint)}
+.btn--danger-solid{background:var(--danger); border-color:var(--danger); color:#fff; font-weight:600}
+.btn--sm{height:28px; padding:0 10px; font-size:12.5px; border-radius:var(--r-sm); gap:5px}
+.btn--sm svg{width:14px;height:14px}
+.btn--lg{height:40px; padding:0 18px; font-size:14px}
+.btn--block{width:100%}
+.btn--icon{width:32px; height:32px; padding:0; border-radius:var(--r-md)}
+.btn--icon.btn--ghost{color:var(--muted)}
+
+/* ============ 表单 ============ */
+.field{display:grid; gap:6px; margin-bottom:14px}
+.field:last-child{margin-bottom:0}
+.field > label,.label{font-size:12.5px; font-weight:500; color:var(--ink-2); letter-spacing:.02em; display:flex; align-items:center; gap:6px}
+.label__opt{color:var(--faint); font-weight:400}
+.input,.select,.textarea{
+  width:100%; height:36px; padding:0 11px;
+  background:var(--surface); color:var(--ink);
+  border:1px solid var(--line-2); border-radius:var(--r-md);
+  font-size:13.5px; transition:border-color .13s, box-shadow .13s, background .13s;
+}
+.textarea{height:auto; min-height:104px; padding:9px 11px; line-height:1.65; resize:vertical}
+.input::placeholder,.textarea::placeholder{color:var(--faint)}
+.input:hover,.select:hover,.textarea:hover{border-color:var(--faint)}
+.input:focus,.select:focus,.textarea:focus{outline:none; border-color:var(--primary); box-shadow:var(--ring)}
+.input:disabled{background:var(--surface-3); color:var(--muted)}
+.input--mono{font-family:var(--mono); font-size:12.5px}
+.select{
+  appearance:none; padding-right:30px;
+  background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2379736a' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6.5 9.5 5.5 5.5 5.5-5.5'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 9px center;
+}
+.hint{font-size:12.5px; color:var(--muted); line-height:1.55}
+.hint--tight{margin-top:2px}
+.err{font-size:12.5px; color:var(--danger); display:flex; align-items:center; gap:5px}
+.err svg{width:14px;height:14px}
+.input.is-invalid{border-color:var(--danger); box-shadow:var(--ring-danger)}
+
+.check{display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-2); cursor:pointer; user-select:none}
+.check input{appearance:none; width:16px; height:16px; flex:none; margin:0;
+  border:1.5px solid var(--line-2); border-radius:5px; background:var(--surface);
+  transition:background .12s, border-color .12s; position:relative}
+.check input[type=radio]{border-radius:50%}
+.check input:hover{border-color:var(--faint)}
+.check input:checked{background:var(--primary); border-color:var(--primary)}
+.check input[type=checkbox]:checked::after{
+  content:""; position:absolute; left:4.4px; top:1.4px; width:4px; height:8px;
+  border:1.8px solid #fff; border-top:0; border-left:0; transform:rotate(42deg);
+}
+[data-theme="dark"] .check input[type=checkbox]:checked::after{border-color:var(--primary-ink)}
+.check input[type=radio]:checked::after{
+  content:""; position:absolute; inset:3.4px; border-radius:50%; background:#fff;
+}
+[data-theme="dark"] .check input[type=radio]:checked::after{background:var(--primary-ink)}
+.check input:focus-visible{outline:2px solid var(--primary); outline-offset:2px}
+.check--block{display:flex; padding:9px 0}
+
+.radio-card{
+  display:flex; gap:10px; padding:11px 12px; border:1px solid var(--line-2);
+  border-radius:var(--r-md); background:var(--surface); cursor:pointer; transition:all .13s;
+}
+.radio-card:hover{border-color:var(--faint)}
+.radio-card.is-checked{border-color:var(--primary); background:var(--primary-tint); box-shadow:0 0 0 1px var(--primary) inset}
+.radio-card strong{display:block; font-size:13px; font-weight:600}
+.radio-card span{font-size:12.5px; color:var(--muted); line-height:1.5}
+
+.inline-fields{display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end}
+.inline-fields .field{margin:0; min-width:110px}
+.field--grow{flex:1 1 240px}
+
+/* ============ 分段控件 / 标签页 ============ */
+.segmented{
+  display:inline-flex; gap:2px; padding:3px; border-radius:11px;
+  background:var(--surface-3); border:1px solid var(--line);
+}
+.segmented button{
+  display:inline-flex; align-items:center; gap:7px;
+  height:30px; padding:0 13px; border-radius:8px;
+  font-size:13px; font-weight:500; color:var(--muted);
+  transition:color .13s, background .13s, box-shadow .13s;
+}
+.segmented button svg{width:15px;height:15px}
+.segmented button:hover{color:var(--ink)}
+.segmented button[aria-selected="true"],.segmented button.is-active{
+  background:var(--surface); color:var(--ink); font-weight:600;
+  box-shadow:var(--shadow-1); border:1px solid var(--line);
+}
+.segmented--block{display:grid; grid-auto-flow:column; grid-auto-columns:1fr; width:100%}
+
+.tabs{display:flex; gap:2px; border-bottom:1px solid var(--line); margin-bottom:18px; overflow-x:auto}
+.tab{
+  position:relative; padding:9px 14px 11px; font-size:13.5px; font-weight:500;
+  color:var(--muted); white-space:nowrap; border-bottom:2px solid transparent; margin-bottom:-1px;
+  display:inline-flex; align-items:center; gap:7px;
+}
+.tab svg{width:15px;height:15px}
+.tab:hover{color:var(--ink)}
+.tab[aria-selected="true"]{color:var(--ink); font-weight:600; border-bottom-color:var(--primary)}
+.tab__count{font-size:11.5px; color:var(--faint); font-variant-numeric:tabular-nums;
+  background:var(--surface-3); border-radius:99px; padding:0 6px; line-height:17px}
+
+/* ============ 徽标 / 芯片 ============ */
+.badge{
+  display:inline-flex; align-items:center; gap:5px; height:21px; padding:0 8px;
+  border-radius:99px; font-size:11.5px; font-weight:500; letter-spacing:.02em;
+  border:1px solid var(--line); background:var(--surface-2); color:var(--ink-2);
+  white-space:nowrap; font-variant-numeric:tabular-nums;
+}
+.badge svg{width:12px;height:12px;stroke-width:2}
+.badge--ok{background:var(--ok-tint); border-color:var(--ok-line); color:var(--ok)}
+.badge--warn{background:var(--warn-tint); border-color:var(--warn-line); color:var(--warn)}
+.badge--danger{background:var(--danger-tint); border-color:var(--danger-line); color:var(--danger)}
+.badge--info{background:var(--info-tint); border-color:var(--info-line); color:var(--info)}
+.badge--primary{background:var(--primary-tint); border-color:var(--primary-line); color:var(--primary)}
+.badge--plain{background:transparent}
+
+.dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.dot--pulse{box-shadow:0 0 0 0 currentColor; animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(14,110,114,.35)}70%{box-shadow:0 0 0 6px rgba(14,110,114,0)}100%{box-shadow:0 0 0 0 rgba(14,110,114,0)}}
+
+.chips{display:flex; flex-wrap:wrap; gap:6px}
+.chip{
+  display:inline-flex; align-items:center; gap:6px; max-width:100%;
+  height:26px; padding:0 4px 0 9px; border-radius:7px;
+  background:var(--surface-2); border:1px solid var(--line);
+  font-size:12.5px; color:var(--ink-2);
+}
+.chip svg{width:13px;height:13px;color:var(--muted)}
+.chip__text{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--mono); font-size:12px}
+.chip__x{display:grid;place-items:center;width:18px;height:18px;border-radius:5px;color:var(--faint)}
+.chip__x:hover{background:var(--surface-3); color:var(--ink)}
+.chip__x svg{width:12px;height:12px}
+
+/* ============ 表格 ============ */
+.tablewrap{overflow:auto; max-height:440px; border-top:1px solid var(--line); position:relative}
+.table{width:100%; border-collapse:separate; border-spacing:0; font-size:13px}
+.table th,.table td{padding:8px 12px; text-align:left; vertical-align:middle}
+.table thead th{
+  position:sticky; top:0; z-index:2;
+  background:var(--surface-2); color:var(--muted);
+  font-weight:500; font-size:12px; letter-spacing:.03em;
+  border-bottom:1px solid var(--line); white-space:nowrap;
+}
+.table tbody td{border-bottom:1px solid var(--line); color:var(--ink-2)}
+.table tbody tr:last-child td{border-bottom:0}
+.table tbody tr:hover td{background:var(--surface-2)}
+.table tbody tr.is-selected td{background:var(--row-sel)}
+.table td.name{color:var(--ink); font-weight:500; max-width:0; width:100%}
+.table td.name .nm{display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0}
+.table td.name .filecell{display:flex; align-items:center; gap:9px; min-width:0}
+.table .col-check{width:38px; padding-right:0}
+.table .col-num{text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; color:var(--muted)}
+.table .col-act{width:1%; white-space:nowrap; text-align:right}
+.table--grid td{font-variant-numeric:tabular-nums; white-space:nowrap}
+.table--grid tbody tr{height:37px}
+.table--grid td.txt{max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.table--grid .cell-link{color:var(--primary); border-bottom:1px dashed var(--primary-line); cursor:pointer}
+.table .sortable{cursor:pointer; user-select:none}
+.table .sortable:hover{color:var(--ink)}
+.table .sortable svg{width:13px;height:13px;vertical-align:-2px;opacity:.5}
+.table .sorted{color:var(--primary)}
+.table .sorted svg{opacity:1}
+
+/* ============ 拖放区 ============ */
+.dropzone{
+  position:relative; display:grid; place-items:center; gap:8px; text-align:center;
+  padding:30px 20px; border:1.5px dashed var(--line-2); border-radius:var(--r-lg);
+  background:linear-gradient(180deg, var(--surface-2), var(--surface));
+  transition:border-color .15s, background .15s, transform .15s; cursor:pointer;
+}
+.dropzone:hover{border-color:var(--primary-line); background:var(--primary-tint)}
+.dropzone__icon{
+  display:grid; place-items:center; width:42px; height:42px; border-radius:12px;
+  background:var(--surface); border:1px solid var(--line); color:var(--primary);
+  box-shadow:var(--shadow-1);
+}
+.dropzone__icon svg{width:20px;height:20px}
+.dropzone__title{font-size:14px; font-weight:600; color:var(--ink)}
+.dropzone__title em{font-style:normal; color:var(--primary); text-decoration:underline; text-underline-offset:3px}
+.dropzone__hint{font-size:12.5px; color:var(--muted); max-width:46ch}
+.dropzone.is-over{border-color:var(--primary); background:var(--primary-tint); transform:scale(.997)}
+.dropzone--sm{padding:16px; grid-auto-flow:column; justify-content:start; text-align:left; gap:12px}
+.dropzone--sm .dropzone__icon{width:34px;height:34px;border-radius:10px}
+
+/* ============ 进度 / 任务条 ============ */
+.progress{height:6px; border-radius:99px; background:var(--surface-3); overflow:hidden}
+.progress__bar{height:100%; border-radius:99px; background:var(--primary); transition:width .35s cubic-bezier(.4,0,.2,1); position:relative}
+.progress__bar--indeterminate{width:34%; animation:slide 1.4s infinite ease-in-out}
+@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}
+.progress--thin{height:4px}
+
+.jobbar{
+  position:sticky; top:var(--appbar-h); z-index:55;
+  display:flex; align-items:center; gap:14px;
+  padding:10px 24px; background:var(--primary-tint);
+  border-bottom:1px solid var(--primary-line);
+  animation:drop-in .18s ease-out;
+}
+@keyframes drop-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.jobbar__main{flex:1; min-width:0; display:grid; gap:5px}
+.jobbar__row{display:flex; align-items:center; gap:10px; min-width:0}
+.jobbar__label{font-size:13px; font-weight:600; color:var(--primary); white-space:nowrap; display:flex; align-items:center; gap:7px}
+.jobbar__detail{font-size:12.5px; color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--mono)}
+.jobbar__pct{margin-left:auto; font-size:12px; color:var(--primary); font-variant-numeric:tabular-nums; white-space:nowrap}
+.jobbar .progress{background:var(--primary-faint)}
+
+.stat{display:flex; align-items:baseline; gap:6px}
+.stat__v{font-size:22px; font-weight:600; letter-spacing:-.02em; font-variant-numeric:tabular-nums; line-height:1.2}
+.stat__u{font-size:12.5px; color:var(--muted)}
+.stat__k{font-size:12px; color:var(--muted); letter-spacing:.02em}
+
+/* ============ 提示条 ============ */
+.banner{
+  display:flex; gap:11px; padding:12px 14px; border-radius:var(--r-md);
+  border:1px solid var(--line); background:var(--surface-2); font-size:13px; line-height:1.6;
+}
+.banner svg{width:17px;height:17px;margin-top:1px;flex:none}
+.banner__body{min-width:0}
+.banner strong{font-weight:600}
+.banner--info{background:var(--info-tint); border-color:var(--info-line); color:var(--ink)}
+.banner--info > svg{color:var(--info)}
+.banner--warn{background:var(--warn-tint); border-color:var(--warn-line)}
+.banner--warn > svg{color:var(--warn)}
+.banner--danger{background:var(--danger-tint); border-color:var(--danger-line)}
+.banner--danger > svg{color:var(--danger)}
+.banner--ok{background:var(--ok-tint); border-color:var(--ok-line)}
+.banner--ok > svg{color:var(--ok)}
+
+/* ============ 空状态 ============ */
+.empty{display:grid; justify-items:center; gap:8px; padding:34px 20px; text-align:center}
+.empty__icon{
+  display:grid; place-items:center; width:44px; height:44px; border-radius:13px;
+  background:var(--surface-2); border:1px solid var(--line); color:var(--faint); margin-bottom:2px;
+}
+.empty__icon svg{width:20px;height:20px}
+.empty__title{font-size:13.5px; font-weight:600; color:var(--ink-2)}
+.empty__text{font-size:12.5px; color:var(--muted); max-width:46ch}
+
+/* ============ 下拉菜单 ============ */
+.menu-wrap{position:relative}
+.menu{
+  position:absolute; right:0; top:calc(100% + 6px); z-index:80; min-width:196px;
+  background:var(--surface); border:1px solid var(--line); border-radius:10px;
+  box-shadow:var(--shadow-3); padding:5px; display:none;
+}
+.menu.is-open{display:block; animation:menu-in .12s ease-out}
+@keyframes menu-in{from{opacity:0; transform:translateY(-4px) scale(.99)}to{opacity:1;transform:none}}
+.menu__item{display:flex; align-items:center; gap:9px; width:100%; padding:7px 9px; border-radius:6px; font-size:13px; color:var(--ink-2); text-align:left}
+.menu__item svg{width:15px;height:15px;color:var(--muted)}
+.menu__item:hover{background:var(--surface-3); color:var(--ink)}
+.menu__sep{height:1px; background:var(--line); margin:4px 2px}
+.menu__label{padding:6px 9px 3px; font-size:11.5px; color:var(--faint); letter-spacing:.04em}
+
+/* ============ 对话框 ============ */
+dialog{
+  border:0; padding:0; color:var(--ink); background:var(--surface);
+  border-radius:var(--r-xl); box-shadow:var(--shadow-3);
+  width:min(560px, calc(100vw - 32px)); max-height:calc(100vh - 64px);
+  overflow:visible;
+}
+dialog::backdrop{background:rgba(28,24,16,.42); backdrop-filter:blur(3px)}
+dialog[open]{animation:dialog-in .16s cubic-bezier(.2,.8,.3,1)}
+@keyframes dialog-in{from{opacity:0; transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
+.dialog__head{display:flex; align-items:flex-start; gap:12px; padding:20px 22px 0}
+.dialog__head h2{font-size:16px; font-weight:600; letter-spacing:.01em}
+.dialog__desc{font-size:13px; color:var(--muted); margin-top:3px; line-height:1.6}
+.dialog__body{padding:16px 22px 4px; max-height:min(64vh, 560px); overflow:auto}
+.dialog__foot{display:flex; align-items:center; gap:10px; padding:16px 22px 20px}
+.dialog__foot .spacer{flex:1}
+.dialog--wide{width:min(860px, calc(100vw - 32px))}
+.dialog--file{width:min(760px, calc(100vw - 32px)); overflow:hidden}
+.dialog__x{position:absolute; right:14px; top:14px}
+
+/* ============ 抽屉 ============ */
+.drawer{
+  position:fixed; top:0; right:0; bottom:0; width:min(520px, 92vw); z-index:90;
+  background:var(--surface); border-left:1px solid var(--line); box-shadow:var(--shadow-3);
+  transform:translateX(100%); transition:transform .22s cubic-bezier(.3,.8,.3,1);
+  display:flex; flex-direction:column;
+}
+.drawer.is-open{transform:none}
+.drawer__head{display:flex; align-items:flex-start; gap:12px; padding:18px 20px; border-bottom:1px solid var(--line)}
+.drawer__body{padding:18px 20px; overflow:auto; flex:1}
+.drawer__foot{display:flex; gap:10px; padding:14px 20px; border-top:1px solid var(--line); background:var(--surface-2)}
+.scrim{position:fixed; inset:0; z-index:85; background:rgba(28,24,16,.30); opacity:0; pointer-events:none; transition:opacity .2s; backdrop-filter:blur(1.5px)}
+.scrim.is-open{opacity:1; pointer-events:auto}
+
+/* ============ Toast ============ */
+.toasts{position:fixed; right:20px; bottom:20px; z-index:120; display:grid; gap:8px; justify-items:end; pointer-events:none}
+.toast{
+  display:flex; align-items:flex-start; gap:10px; min-width:260px; max-width:380px;
+  padding:11px 13px; border-radius:10px; background:var(--surface);
+  border:1px solid var(--line); box-shadow:var(--shadow-2); font-size:13px; line-height:1.5;
+  animation:toast-in .2s cubic-bezier(.2,.8,.3,1); pointer-events:auto;
+}
+@keyframes toast-in{from{opacity:0; transform:translateY(8px)}to{opacity:1;transform:none}}
+.toast.is-out{opacity:0; transform:translateY(6px); transition:all .18s}
+.toast svg{width:16px;height:16px;margin-top:1px;flex:none}
+.toast--ok svg{color:var(--ok)} .toast--warn svg{color:var(--warn)}
+.toast--err svg{color:var(--danger)} .toast--info svg{color:var(--info)}
+.toast strong{font-weight:600}
+.toast__body{min-width:0; flex:1}
+.toast__sub{color:var(--muted); font-size:12.5px; margin-top:1px}
+
+/* ============ 其它小件 ============ */
+.kbd{
+  display:inline-flex; align-items:center; justify-content:center; min-width:19px; height:19px;
+  padding:0 5px; border-radius:5px; border:1px solid var(--line-2); border-bottom-width:2px;
+  background:var(--surface-2); font-family:var(--mono); font-size:11px; color:var(--muted);
+}
+.divider{height:1px; background:var(--line); margin:16px 0}
+.row{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+.row--tight{gap:7px}
+.row--between{justify-content:space-between}
+.grow{flex:1}
+.stack{display:grid; gap:14px}
+.stack--tight{gap:8px}
+.hr-label{display:flex; align-items:center; gap:10px; font-size:11.5px; letter-spacing:.06em; color:var(--faint); text-transform:uppercase}
+.hr-label::after{content:""; flex:1; height:1px; background:var(--line)}
+.kv{display:grid; grid-template-columns:auto 1fr; gap:6px 14px; font-size:12.5px}
+.kv dt{color:var(--muted); white-space:nowrap}
+.kv dd{margin:0; color:var(--ink-2); font-variant-numeric:tabular-nums; overflow-wrap:anywhere}
+.path{font-family:var(--mono); font-size:12px; color:var(--muted); overflow-wrap:anywhere}
+.scroll{overflow:auto}
+.cursor-help{cursor:help}
+.fade-mask{position:relative}
+.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+/* 徽标色带（文件类型） */
+.ft{
+  display:grid; place-items:center; width:26px; height:26px; border-radius:7px; flex:none;
+  font-size:10px; font-weight:700; letter-spacing:.02em; text-transform:uppercase;
+  background:var(--surface-3); color:var(--ink-2); border:1px solid var(--line);
+}
+.ft--doc{background:#eaf1f9; color:#2b5f8c; border-color:#cfdff0}
+.ft--xls{background:#e8f3ed; color:#2c7a52; border-color:#c8e2d5}
+.ft--ppt{background:#fbeee5; color:#a0512b; border-color:#eed6c5}
+.ft--pdf{background:#fbe9e6; color:#ab3a2e; border-color:#eec5bf}
+.ft--zip{background:#f3edf9; color:#6b4a9b; border-color:#ded1ee}
+.ft--img{background:#e6f1f0; color:#0e6e72; border-color:#c3dcda}
+.ft--mail{background:#eef1e3; color:#5d6b2d; border-color:#dbe2c4}
+[data-theme="dark"] .ft--doc{background:#1b2836; color:#8ab6e0; border-color:#2b4258}
+[data-theme="dark"] .ft--xls{background:#182c24; color:#7fcea4; border-color:#2a4c3b}
+[data-theme="dark"] .ft--ppt{background:#302218; color:#e0a077; border-color:#57392a}
+[data-theme="dark"] .ft--pdf{background:#2f1d1b; color:#e58d7f; border-color:#5b332d}
+[data-theme="dark"] .ft--zip{background:#251d33; color:#b79ade; border-color:#412f58}
+[data-theme="dark"] .ft--img{background:#16302f; color:#63bcbe; border-color:#2b5453}
+[data-theme="dark"] .ft--mail{background:#242a1b; color:#bccb86; border-color:#3f4a2c}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important}
+}
+@media (max-width:720px){
+  .page{padding:16px 14px 56px}
+  .appbar{padding:0 14px}
+  .jobbar{padding:10px 14px}
+  .grid-main{gap:14px}
+}
+
+</style>
+<style>
+  /* page styles */
+  .vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);border:0;white-space:nowrap}
+  .tabs{margin-bottom:16px}
+  [role=tabpanel]:focus-visible{outline:none}
+  .status{white-space:pre-line; font-size:12.5px; line-height:1.6; margin:8px 0 0; color:var(--muted)}
+  .status:empty{display:none}
+  .status.ok{color:var(--ok)} .status.warn{color:var(--warn)} .status.bad{color:var(--danger)} .status.info{color:var(--info)}
+  p.status.bad,p.status.warn{font-weight:500}
+  .hint.mono,.mono{font-family:var(--mono); font-size:12px; overflow-wrap:anywhere}
+  .field{display:block; font-size:12.5px; font-weight:500; color:var(--ink-2); margin:14px 0 6px}
+  .step__body > .field:first-child{margin-top:0}
+  .row{flex-wrap:nowrap}
+  .row > input[type=text]{flex:1; min-width:0}
+  input[type=text],input[type=number],input[type=date],textarea,select{height:36px; padding:0 11px; background:var(--surface); color:var(--ink); border:1px solid var(--line-2); border-radius:var(--r-md); font-size:13.5px}
+  textarea{height:auto; min-height:84px; width:100%; padding:9px 11px; font-family:var(--mono); font-size:12.5px; resize:vertical}
+  input[type=text]{font-family:var(--mono); font-size:12.5px}
+  input:focus,textarea:focus,select:focus{outline:none; border-color:var(--primary); box-shadow:var(--ring)}
+  input:disabled,textarea:disabled{background:var(--surface-3); color:var(--muted)}
+  main :where(button:not(.btn):not(.tab):not(.chip__x):not(.menu__item)){display:inline-flex; align-items:center; gap:6px; height:34px; padding:0 13px; border-radius:var(--r-md); border:1px solid var(--line-2); background:var(--surface); color:var(--ink); font-size:13.5px; font-weight:500; box-shadow:var(--shadow-1)}
+  main :where(button:not(.btn):not(.tab):not(.chip__x):not(.menu__item)):hover{background:var(--surface-2)}
+  main button.primary{background:var(--primary); border-color:var(--primary); color:var(--primary-ink); font-weight:600}
+  main button.primary:hover{background:var(--primary-hover)}
+  main button.cancel{color:var(--danger); border-color:var(--danger-line)}
+  main button.small{height:28px; padding:0 10px; font-size:12.5px}
+  main button.cancel:hover{background:var(--danger-tint)}
+  main button:disabled{opacity:.45; cursor:not-allowed; box-shadow:none}
+  .actions{display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; align-items:center}
+  .check{display:flex; align-items:flex-start; gap:9px; padding:7px 0; font-size:13px; color:var(--ink-2)}
+  .check input{margin-top:3px; accent-color:var(--primary); width:16px; height:16px; flex:none}
+  .check small{display:block; color:var(--muted); font-size:12px; line-height:1.5}
+  progress{width:100%; height:6px; margin-top:12px; border:0; border-radius:99px; background:var(--surface-3); overflow:hidden; accent-color:var(--primary)}
+  progress::-webkit-progress-bar{background:var(--surface-3)}
+  progress::-webkit-progress-value{background:var(--primary); border-radius:99px}
+  pre{white-space:pre-wrap; overflow-wrap:anywhere; background:var(--surface-2); border:1px solid var(--line); border-radius:var(--r-md); padding:10px 12px; font-size:12px; max-height:320px; overflow:auto; margin:8px 0 0}
+  details{margin-top:10px} details summary{cursor:pointer; font-size:12.5px; color:var(--ink-2)}
+  h3{font-size:13px; font-weight:600; margin:14px 0 4px}
+  .scroll{overflow:auto; max-height:420px; border:1px solid var(--line); border-radius:var(--r-md); margin-top:10px}
+  .scroll table{width:100%; border-collapse:separate; border-spacing:0; font-size:13px}
+  .scroll th{position:sticky; top:0; z-index:1; background:var(--surface-2); color:var(--muted); font-weight:500; font-size:12px; text-align:left; padding:8px 12px; border-bottom:1px solid var(--line); white-space:nowrap}
+  .scroll td{padding:7px 12px; border-bottom:1px solid var(--line); color:var(--ink-2); vertical-align:top}
+  .scroll tr:last-child td{border-bottom:0}
+  .scroll tbody tr:hover td{background:var(--surface-2)}
+  .scroll td.rel{overflow-wrap:anywhere; color:var(--ink)}
+  .scroll td.num,.scroll th.num{text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums}
+  .scroll td input[type=checkbox]{accent-color:var(--primary); width:16px; height:16px}
+  .scroll td.wrap{white-space:normal}
+  .selbar{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px}
+  .selbar .grow{flex:1}
+  /* folder browser */
+  .browser{margin-top:10px; padding:12px; border:1px solid var(--line); border-radius:var(--r-md); background:var(--surface-2)}
+  .browser .row{flex-wrap:wrap}
+  .browser .b-path{flex:1; min-width:0}
+  .browser ul{list-style:none; margin:6px 0 0; padding:0; max-height:220px; overflow:auto; border:1px solid var(--line); border-radius:var(--r-sm); background:var(--surface)}
+  .browser ul:empty{display:none}
+  .browser li{border-bottom:1px solid var(--line)} .browser li:last-child{border-bottom:0}
+  .browser li button{width:100%; justify-content:flex-start; border:0 !important; box-shadow:none !important; border-radius:0 !important; background:transparent !important; height:auto !important; padding:6px 10px !important; text-align:left; overflow-wrap:anywhere}
+  .browser li button:hover{background:var(--surface-2) !important}
+  .browser li button svg{color:var(--muted); width:15px; height:15px}
+  .browser li label{display:flex; gap:8px; padding:6px 10px; font-size:13px; align-items:center}
+  .browser li.hint{padding:6px 10px}
+  /* steps */
+  .step.is-locked .step__title{color:var(--muted)}
+  .step__body{padding-top:0}
+  .placeholder{padding:0 18px 18px; color:var(--muted); font-size:12.5px}
+  .radio-cards{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px}
+  .radio-card input{accent-color:var(--primary); margin-top:3px}
+  .opts h3{margin-top:16px}
+  .opts .o-merge-row{display:none}
+  fieldset{border:1px solid var(--line); border-radius:var(--r-md); margin:14px 0 0; padding:8px 12px}
+  legend{font-size:12.5px; font-weight:500; color:var(--ink-2); padding:0 4px}
+  /* rail */
+  .rail .kv dd{overflow-wrap:anywhere}
+  .runbox progress{margin-top:6px}
+  .runbox .status{max-height:180px; overflow:auto}
+  /* results */
+  .result h2,.result > h2{font-size:14.5px; font-weight:600}
+  .mini-grid{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:12px 0}
+  .mini{border:1px solid var(--line); border-radius:var(--r-md); padding:9px 11px; background:var(--surface-2)}
+  .mini .k{font-size:11.5px; color:var(--muted)}
+  .mini .v{font-size:18px; font-weight:600; font-variant-numeric:tabular-nums}
+  /* task cards */
+  .taskcards{display:grid; gap:10px; margin-top:12px}
+  .taskcard{display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:10px; align-items:start; padding:12px 14px; border:1px solid var(--line); border-radius:var(--r-md); background:var(--surface)}
+  .taskcard:hover{border-color:var(--line-2)}
+  .taskcard input{accent-color:var(--primary); width:16px; height:16px; margin-top:3px}
+  .taskcard__name{display:flex; align-items:center; gap:8px; font-weight:600; font-size:13.5px}
+  .taskcard__path{font-family:var(--mono); font-size:12px; color:var(--muted); overflow-wrap:anywhere; margin-top:3px}
+  .taskcard__meta{font-size:12px; color:var(--ink-2); margin-top:4px}
+  .taskcard__acts{display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end}
+  .sdot{width:9px; height:9px; border-radius:50%; flex:none; background:var(--faint)}
+  .sdot.ok{background:var(--ok)} .sdot.warn{background:var(--warn)}
+  .taskcard .bad{color:var(--danger); font-size:12px}
+  /* stepper */
+  .stepper{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-bottom:14px}
+  .stepper > div{display:flex; align-items:center; gap:8px; padding:10px 12px; border:1px solid var(--line); border-radius:var(--r-md); background:var(--surface); font-size:12.5px; color:var(--muted)}
+  .stepper > div.is-active{border-color:var(--primary-line); background:var(--primary-tint); color:var(--ink)}
+  .stepper > div.is-done{color:var(--ink-2)}
+  .stepper .step__num{width:22px; height:22px; font-size:11.5px}
+  .stepper .is-active .step__num{background:var(--primary); border-color:var(--primary); color:var(--primary-ink)}
+  .stepper .is-done .step__num{background:var(--ok-tint); border-color:var(--ok-line); color:var(--ok)}
+  /* upgrade */
+  .ustatus{margin-top:12px; font-size:12.5px; color:var(--muted)}
+  .ustatus.ok{color:var(--ok)} .ustatus.bad{color:var(--danger)} .ustatus.warn{color:var(--warn)} .ustatus.info{color:var(--info)}
+  .ureport ul{margin:0; padding-left:18px; font-size:12.5px; color:var(--ink-2)}
+  .ureport .ver{font-weight:600; margin-top:10px}
+  .ureport .warnbox{margin-top:8px; padding:8px 10px; border:1px solid var(--warn-line); background:var(--warn-tint); border-radius:var(--r-md); font-size:12.5px}
+  .closed-banner{margin-bottom:14px}
+  .seg-lang{height:32px}
+  .segmented button[aria-checked="true"]{background:var(--surface); color:var(--ink); font-weight:600; box-shadow:var(--shadow-1); border:1px solid var(--line)}
+  .seg-lang button{height:24px; padding:0 9px; font-size:12px}
+  .foot{max-width:1240px; margin:0 auto; padding:0 24px 28px; color:var(--muted); font-size:12px}
+  .step + .step{margin-top:14px}
+  @media (max-width:720px){.radio-cards,.stepper{grid-template-columns:1fr}.mini-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.foot{padding:0 14px 24px}.taskcard{grid-template-columns:auto minmax(0,1fr)}.taskcard__acts{grid-column:2;justify-content:flex-start}}
 </style>
 </head>
 <body>
-<main>
-  <header>
-    <h1 data-t="title"></h1>
-    <div class="tools">
-      <button id="up-open" type="button" aria-expanded="false" aria-controls="upgrade"></button>
-      <button id="quit" type="button" data-t="quit"></button>
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+<symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h3.2c.6 0 1.2.25 1.6.7l1 1.1h7.2A2.5 2.5 0 0 1 21 9.3v7.2A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z"/></symbol>
+<symbol id="i-folder-open" viewBox="0 0 24 24"><path d="M3 8V6.5A2.5 2.5 0 0 1 5.5 4h3.2c.6 0 1.2.25 1.6.7l1 1.1h6.2A2.5 2.5 0 0 1 20 8.3"/><path d="M3.6 10h16.8a1 1 0 0 1 .97 1.24l-1.7 6.5A2 2 0 0 1 17.73 19H5.1a2 2 0 0 1-1.94-1.53L2.4 12.1A1.6 1.6 0 0 1 3.6 10z"/></symbol>
+<symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M4 17l5-5 3.5 3.5L16 12l4 4.5"/></symbol>
+<symbol id="i-table" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M3 9.5h18M3 15h18M9.5 9.5V20"/></symbol>
+<symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="6.2" rx="7.6" ry="2.9"/><path d="M4.4 6.2v11.4c0 1.6 3.4 2.9 7.6 2.9s7.6-1.3 7.6-2.9V6.2"/><path d="M4.4 12c0 1.6 3.4 2.9 7.6 2.9s7.6-1.3 7.6-2.9"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.2 19 6v6c0 4.2-2.9 7.4-7 8.8C7.9 19.4 5 16.2 5 12V6z"/><path d="m9 12 2.2 2.2L15.4 10"/></symbol>
+<symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3.5v8"/><path d="M7.2 6.2a7.5 7.5 0 1 0 9.6 0"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M12 7.6V12l3 1.8"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.8 4.4 4.2L19 6.6"/></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4.6 21 19.4H3z"/><path d="M12 9.8v4.4M12 17.2h.01"/></symbol>
+<symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M12 11v5.2M12 8h.01"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M6.4 6.4l11.2 11.2M17.6 6.4 6.4 17.6"/></symbol>
+<symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6.5 9.5 5.5 5.5 5.5-5.5"/></symbol>
+<symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9.5 6.5 5.5 5.5-5.5 5.5"/></symbol>
+<symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m14.5 6.5-5.5 5.5 5.5 5.5"/></symbol>
+<symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M4.5 12h15M13.5 6l6 6-6 6"/></symbol>
+<symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19.5 12h-15M10.5 6l-6 6 6 6"/></symbol>
+<symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19.5v-15M6 10.5l6-6 6 6"/></symbol>
+<symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4.5M7.5 9 12 4.5 16.5 9"/><path d="M4.5 15.5v3A2 2 0 0 0 6.5 20.5h11a2 2 0 0 0 2-2v-3"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4.5V16M7.5 11.5 12 16l4.5-4.5"/><path d="M4.5 15.5v3A2 2 0 0 0 6.5 20.5h11a2 2 0 0 0 2-2v-3"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.3"/><path d="m15.4 15.4 4.1 4.1"/></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></symbol>
+<symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4"/><path d="M9.7 9.4a2.4 2.4 0 1 1 3.4 2.2c-.7.4-1.1 1-1.1 1.8v.3M12 17h.01"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.4A8.4 8.4 0 1 1 9.6 4a6.9 6.9 0 0 0 10.4 10.4z"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.8v2M12 19.2v2M2.8 12h2M19.2 12h2M5.5 5.5l1.4 1.4M17.1 17.1l1.4 1.4M18.5 5.5l-1.4 1.4M6.9 17.1l-1.4 1.4"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4.5V10h-5.4"/></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><path d="M8.5 5.8 18 12l-9.5 6.2z"/></symbol>
+<symbol id="i-stop" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="1.8"/></symbol>
+<symbol id="i-more" viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="18" cy="12" r="1.3" fill="currentColor" stroke="none"/></symbol>
+<symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4.5h5.5V10"/><path d="M19 5 11.5 12.5"/><path d="M18 14v4.5a2 2 0 0 1-2 2H6.5a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2H11"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 5.5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2V13a2 2 0 0 0 2 2"/></symbol>
+<symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V5.2A1.2 1.2 0 0 1 10.7 4h2.6a1.2 1.2 0 0 1 1.2 1.2V7"/><path d="M6.5 7l.9 12.1a1.8 1.8 0 0 0 1.8 1.7h5.6a1.8 1.8 0 0 0 1.8-1.7L17.5 7"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3.8 8 4.2-8 4.2-8-4.2z"/><path d="m4 12.2 8 4.2 8-4.2M4 16.4l8 4.2 8-4.2"/></symbol>
+<symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="m7.5 9.5 3 2.7-3 2.7M13 15h3.5"/></symbol>
+<symbol id="i-qr" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1.2"/><rect x="14" y="4" width="6" height="6" rx="1.2"/><rect x="4" y="14" width="6" height="6" rx="1.2"/><path d="M14 14h2.5v2.5H14zM19.5 14v2.5M14 19.5h2.5M19.5 19.5h.01"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.8 12S6 6.5 12 6.5 21.2 12 21.2 12 18 17.5 12 17.5 2.8 12 2.8 12z"/><circle cx="12" cy="12" r="2.6"/></symbol>
+<symbol id="i-package" viewBox="0 0 24 24"><path d="M20.5 8.2 12 3.8 3.5 8.2v7.6L12 20.2l8.5-4.4z"/><path d="M3.5 8.2 12 12.6l8.5-4.4M12 12.6v7.6"/></symbol>
+<symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.2A1.7 1.7 0 0 1 5.7 3.5H11a2 2 0 0 1 2 2V20a2 2 0 0 0-2-2H5.7A1.7 1.7 0 0 1 4 16.3z"/><path d="M20 5.2a1.7 1.7 0 0 0-1.7-1.7H13v16.5a2 2 0 0 1 2-2h3.3a1.7 1.7 0 0 0 1.7-1.7z"/></symbol>
+<symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 5.5h16l-6.2 7.3v6.1L10.2 17v-4.2z"/></symbol>
+<symbol id="i-sort" viewBox="0 0 24 24"><path d="M8 4.5v15M4.5 8 8 4.5 11.5 8M16 19.5v-15M12.5 16l3.5 3.5 3.5-3.5"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="4.8" y="10.4" width="14.4" height="9.6" rx="2.2"/><path d="M8.2 10.4V7.8a3.8 3.8 0 0 1 7.6 0v2.6"/></symbol>
+<symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M9 20h6M12 16.5V20"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path d="M6.5 10a5.5 5.5 0 0 1 11 0c0 3.2 1 4.6 1.7 5.5H4.8c.7-.9 1.7-2.3 1.7-5.5z"/><path d="M10 18.5a2.2 2.2 0 0 0 4 0"/></symbol>
+<symbol id="i-zip" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M10 5h1.5M10 8h1.5M10 11h1.5M9 13.8h3.2v3.4H9z"/></symbol>
+<symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5.5" width="18" height="13" rx="2.2"/><path d="m4 7 8 5.8L20 7"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13.8a3.6 3.6 0 0 0 5.1 0l2.6-2.6a3.6 3.6 0 0 0-5.1-5.1l-1.3 1.3"/><path d="M14 10.2a3.6 3.6 0 0 0-5.1 0l-2.6 2.6a3.6 3.6 0 0 0 5.1 5.1l1.3-1.3"/></symbol>
+</svg>
+
+
+<header class="appbar">
+  <div class="appbar__id">
+    <span class="mark"><svg aria-hidden="true"><use href="#i-book"/></svg></span>
+    <div style="min-width:0">
+      <h1 data-t="title"></h1>
+      <div class="appbar__sub" data-t="app_sub"></div>
     </div>
-  </header>
-  <p class="sub" data-t="sub"></p>
-  <section id="upgrade" class="card" aria-labelledby="upgrade-title">
-    <h2 id="upgrade-title"></h2>
-    <p class="hint" id="up-hint"></p>
-    <label class="drop" id="up-drop" tabindex="0" role="button" aria-describedby="up-status">
-      <input type="file" id="up-file" class="vh" accept=".zip,application/zip" tabindex="-1">
-      <strong id="up-drop-strong"></strong><span id="up-drop-rest"></span>
-    </label>
-    <div class="row">
-      <label class="drop" id="up-dir-label" tabindex="0" role="button" style="margin:0;padding:6px 12px;">
-        <input type="file" id="up-dir" class="vh" webkitdirectory multiple tabindex="-1"><span id="up-dir-text"></span>
-      </label>
-      <button id="up-rollback" type="button" disabled></button>
+  </div>
+  <div class="appbar__actions">
+    <div class="segmented seg-lang" role="radiogroup" id="lang" data-t-label="lang_label">
+      <button type="button" role="radio" data-lang="zh" aria-checked="false">中</button>
+      <button type="button" role="radio" data-lang="en" aria-checked="false">EN</button>
     </div>
-    <div id="up-status" class="ustatus info" aria-live="polite"></div>
-    <div id="up-report" class="ureport"></div>
-    <div class="row"><button id="up-go" class="primary" type="button" hidden></button></div>
-  </section>
-  <div id="closed" hidden></div>
+    <button class="btn btn--ghost btn--icon" type="button" data-theme-toggle aria-label="theme"></button>
+    <button class="btn btn--ghost btn--icon" type="button" id="help-open" data-t-label="help"><svg aria-hidden="true"><use href="#i-help"/></svg></button>
+    <div class="menu-wrap">
+      <button class="btn btn--ghost btn--icon" type="button" id="menu-btn" data-menu-btn="app-menu" aria-haspopup="menu" aria-expanded="false" data-t-label="more"><svg aria-hidden="true"><use href="#i-more"/></svg></button>
+      <div class="menu" id="app-menu" role="menu">
+        <button class="menu__item" type="button" role="menuitem" id="up-open" aria-expanded="false" aria-controls="upgrade"></button>
+        <button class="menu__item" type="button" role="menuitem" id="up-open-rollback"><span data-t="menu_rollback"></span></button>
+      </div>
+    </div>
+    <span class="appbar__divider"></span>
+    <button class="btn btn--ghost" type="button" id="quit" data-t="quit"></button>
+  </div>
+</header>
+
+<div class="jobbar" id="jobbar" hidden>
+  <div class="jobbar__main">
+    <div class="jobbar__row">
+      <span class="jobbar__label"><span class="dot dot--pulse"></span><span id="job-label"></span></span>
+      <span class="jobbar__detail" id="job-detail"></span>
+      <span class="jobbar__pct" id="job-pct"></span>
+    </div>
+    <div class="progress"><div class="progress__bar progress__bar--indeterminate" id="job-bar"></div></div>
+  </div>
+  <button class="btn btn--sm" type="button" id="job-cancel"><svg aria-hidden="true"><use href="#i-stop"/></svg><span data-t="cancel"></span></button>
+</div>
+
+<main class="page">
+  <div class="banner banner--info closed-banner" id="closed" hidden role="status"></div>
   <p id="error" class="status bad" aria-live="polite"></p>
 
-  <div role="tablist" id="tabs" data-t-label="tabs">
-    <button role="tab" id="tab-batch" aria-controls="panel-batch" aria-selected="true" data-t="tab_batch"></button>
-    <button role="tab" id="tab-files" aria-controls="panel-files" aria-selected="false" data-t="tab_files"></button>
-    <button role="tab" id="tab-tasks" aria-controls="panel-tasks" aria-selected="false" data-t="tab_tasks"></button>
-    <button role="tab" id="tab-dedup" aria-controls="panel-dedup" aria-selected="false" data-t="tab_dedup"></button>
+  <div class="tabs" role="tablist" id="tabs" data-t-label="tabs">
+    <button class="tab" role="tab" id="tab-batch" aria-controls="panel-batch" aria-selected="true"><svg aria-hidden="true"><use href="#i-folder"/></svg><span data-t="tab_batch"></span></button>
+    <button class="tab" role="tab" id="tab-files" aria-controls="panel-files" aria-selected="false"><svg aria-hidden="true"><use href="#i-file"/></svg><span data-t="tab_files"></span></button>
+    <button class="tab" role="tab" id="tab-tasks" aria-controls="panel-tasks" aria-selected="false"><svg aria-hidden="true"><use href="#i-clock"/></svg><span data-t="tab_tasks"></span></button>
+    <button class="tab" role="tab" id="tab-dedup" aria-controls="panel-dedup" aria-selected="false"><svg aria-hidden="true"><use href="#i-layers"/></svg><span data-t="tab_dedup"></span></button>
   </div>
 
   <!-- ===================== folder batch ===================== -->
   <section role="tabpanel" id="panel-batch" aria-labelledby="tab-batch" tabindex="0">
-    <div class="card">
-      <h2 data-t="h_source"></h2>
-      <label class="field" for="src" data-t="src_label"></label>
-      <div class="row">
-        <input id="src" type="text" autocomplete="off" spellcheck="false">
-        <button id="srcBrowse" type="button" aria-expanded="false" data-t="browse"></button>
-      </div>
-      <div id="browserHomeSrc"></div>
-      <div class="check">
-        <input id="useSince" type="checkbox">
-        <label for="useSince"><span data-t="since_label"></span></label>
-      </div>
-      <div class="row" id="sinceRow" hidden>
-        <input id="since" type="date" data-t-label="since_label">
-        <span class="hint" data-t="since_hint"></span>
-      </div>
-      <div class="actions">
-        <button id="scan" class="primary" type="button" data-t="scan"></button>
-        <button id="scanCancel" class="cancel" type="button" data-t="cancel" hidden></button>
-      </div>
-      <progress id="scanProg" hidden></progress>
-      <p id="scanStatus" class="status" aria-live="polite"></p>
-    </div>
+    <div class="grid-main">
+      <div>
+        <section class="step is-active" id="bstep1">
+          <div class="step__head"><span class="step__num" id="bstep1-num">1</span><div style="min-width:0"><div class="step__title" data-t="h_source"></div><div class="step__meta" id="bstep1-meta"></div></div></div>
+          <div class="step__body">
+            <label class="field" for="src" data-t="src_label"></label>
+            <div class="row">
+              <input id="src" type="text" autocomplete="off" spellcheck="false">
+              <button id="srcBrowse" type="button" aria-expanded="false" data-t="browse"></button>
+            </div>
+            <div id="browserHomeSrc"></div>
+            <div class="check">
+              <input id="useSince" type="checkbox">
+              <label for="useSince"><span data-t="since_label"></span></label>
+            </div>
+            <div class="row" id="sinceRow" hidden>
+              <input id="since" type="date" data-t-label="since_label">
+              <span class="hint" data-t="since_hint"></span>
+            </div>
+            <div class="actions">
+              <button id="scan" class="primary" type="button" data-t="scan"></button>
+              <button id="scanCancel" class="cancel" type="button" data-t="cancel" hidden></button>
+            </div>
+            <progress id="scanProg" hidden></progress>
+            <p id="scanStatus" class="status" aria-live="polite"></p>
+          </div>
+        </section>
 
-    <div class="card" id="listCard" hidden>
-      <h2 data-t="h_files"></h2>
-      <p id="listSummary"></p>
-      <div class="actions">
-        <button id="all" type="button" data-t="tick_all"></button>
-        <button id="none" type="button" data-t="tick_none"></button>
-      </div>
-      <div class="scroll">
-        <table>
-          <thead><tr><th scope="col"><span data-t="col_take"></span></th><th scope="col" data-t="col_rel"></th><th scope="col" class="num" data-t="col_size"></th></tr></thead>
-          <tbody id="fileRows"></tbody>
-        </table>
-      </div>
-      <p id="listNote" class="status" aria-live="polite"></p>
-      <details id="legacyBox" hidden>
-        <summary id="legacySummary"></summary>
-        <pre id="legacyList"></pre>
-      </details>
-    </div>
+        <section class="step is-locked" id="bstep2">
+          <div class="step__head"><span class="step__num">2</span><div style="min-width:0"><div class="step__title" data-t="h_files"></div><div class="step__meta" id="listSummary"></div></div></div>
+          <div class="placeholder" id="bstep2-empty" data-t="step_wait_scan"></div>
+          <div class="step__body" id="listCard" hidden>
+            <div class="selbar">
+              <button id="all" type="button" class="small" data-t="tick_all"></button>
+              <button id="none" type="button" class="small" data-t="tick_none"></button>
+            </div>
+            <div class="scroll" tabindex="0" data-t-label="h_files">
+              <table>
+                <thead><tr><th scope="col"><span data-t="col_take"></span></th><th scope="col" data-t="col_rel"></th><th scope="col" class="num" data-t="col_size"></th></tr></thead>
+                <tbody id="fileRows"></tbody>
+              </table>
+            </div>
+            <p id="listNote" class="status" aria-live="polite"></p>
+            <details id="legacyBox" hidden>
+              <summary id="legacySummary"></summary>
+              <pre id="legacyList"></pre>
+            </details>
+          </div>
+        </section>
 
-    <div class="card" id="runCard" hidden>
-      <h2 data-t="h_output"></h2>
-      <label class="field" for="out" data-t="out_label"></label>
-      <div class="row">
-        <input id="out" type="text" autocomplete="off" spellcheck="false">
-        <button id="outBrowse" type="button" aria-expanded="false" data-t="browse"></button>
-      </div>
-      <div id="browserHomeOut"></div>
-      <div class="opts" data-prefix="b"></div>
-      <label class="field" for="batchSize" data-t="batch_size_label"></label>
-      <input id="batchSize" type="number" min="0" max="1000000" step="1" value="1000" inputmode="numeric">
-      <p class="hint" id="batchHint"></p>
-      <fieldset id="existingBox" style="border:1px solid var(--line); border-radius:6px; margin:8px 0 0">
-        <legend id="existingLegend"></legend>
-        <div class="check"><input id="exSkip" name="existing" type="radio" checked><label for="exSkip" id="exSkipLabel"></label></div>
-        <div class="check"><input id="exRedo" name="existing" type="radio"><label for="exRedo" id="exRedoLabel"></label></div>
-      </fieldset>
-      <div class="actions">
-        <button id="run" class="primary" type="button" data-t="run"></button>
-        <button id="runCancel" class="cancel" type="button" data-t="cancel" hidden></button>
-      </div>
-      <progress id="runProg" max="100" value="0" hidden></progress>
-      <p id="runStatus" class="status" aria-live="polite"></p>
-    </div>
+        <section class="step is-locked" id="bstep3">
+          <div class="step__head"><span class="step__num">3</span><div style="min-width:0"><div class="step__title" data-t="h_output"></div><div class="step__meta" data-t="step_output_meta"></div></div></div>
+          <div class="placeholder" id="bstep3-empty" data-t="step_wait_scan"></div>
+          <div class="step__body" id="runCard" hidden>
+            <label class="field" for="out" data-t="out_label"></label>
+            <div class="row">
+              <input id="out" type="text" autocomplete="off" spellcheck="false">
+              <button id="outBrowse" type="button" aria-expanded="false" data-t="browse"></button>
+            </div>
+            <div id="browserHomeOut"></div>
+            <div class="opts" data-prefix="b"></div>
+            <label class="field" for="batchSize" data-t="batch_size_label"></label>
+            <div class="row" style="flex-wrap:wrap"><input id="batchSize" type="number" min="0" max="1000000" step="1" value="1000" inputmode="numeric" style="width:130px"><span class="hint" data-t="batch_zero"></span></div>
+            <p class="hint" id="batchHint" style="margin-top:6px"></p>
+            <fieldset id="existingBox">
+              <legend id="existingLegend"></legend>
+              <div class="check"><input id="exSkip" name="existing" type="radio" checked><label for="exSkip" id="exSkipLabel"></label></div>
+              <div class="check"><input id="exRedo" name="existing" type="radio"><label for="exRedo" id="exRedoLabel"></label></div>
+            </fieldset>
+          </div>
+        </section>
 
-    <div class="card result" id="batchResult" hidden></div>
+        <div class="card result" id="batchResult" hidden style="margin-top:14px"></div>
+      </div>
+
+      <aside class="rail">
+        <div class="card runbox">
+          <div class="card__head"><h2 data-t="rail_task"></h2><span class="badge" id="railBadge"></span></div>
+          <div class="card__body" style="display:grid; gap:12px">
+            <dl class="kv" style="margin:0">
+              <dt data-t="k_src"></dt><dd class="mono" id="kSrc"></dd>
+              <dt data-t="k_ticked"></dt><dd id="kTicked"></dd>
+              <dt data-t="k_out"></dt><dd class="mono" id="kOut"></dd>
+              <dt data-t="k_mode"></dt><dd id="kMode"></dd>
+            </dl>
+            <button id="run" class="primary" type="button" disabled style="height:40px; justify-content:center; width:100%"></button>
+            <div>
+              <button id="runCancel" class="cancel small" type="button" data-t="cancel" hidden></button>
+              <progress id="runProg" max="100" value="0" hidden></progress>
+              <p id="runStatus" class="status" aria-live="polite"></p>
+            </div>
+          </div>
+        </div>
+        <div class="card card--quiet">
+          <div class="card__body" style="display:grid; gap:7px">
+            <div class="row row--tight" style="color:var(--muted)"><svg aria-hidden="true"><use href="#i-shield"/></svg><strong style="font-size:12.5px; color:var(--ink-2)" data-t="offline_title"></strong></div>
+            <div class="hint" data-t="offline_text"></div>
+          </div>
+        </div>
+      </aside>
+    </div>
   </section>
 
   <!-- ===================== chosen files ===================== -->
   <section role="tabpanel" id="panel-files" aria-labelledby="tab-files" tabindex="0" hidden>
-    <div class="card">
-      <h2 data-t="h_chosen"></h2>
-      <p class="hint" data-t="chosen_hint"></p>
-      <div class="actions">
-        <button id="filesAdd" type="button" aria-expanded="false" data-t="files_add"></button>
-        <button id="filesClear" type="button" data-t="files_clear"></button>
-      </div>
-      <div id="browserHomeFiles"></div>
-      <div class="scroll" id="filesTable" hidden>
-        <table>
-          <thead><tr><th scope="col" data-t="col_path"></th><th scope="col"><span data-t="col_remove"></span></th></tr></thead>
-          <tbody id="filesRows"></tbody>
-        </table>
-      </div>
-      <p id="filesNote" class="status" aria-live="polite"></p>
+    <div style="max-width:920px">
+      <section class="step is-active">
+        <div class="step__head"><span class="step__num">1</span><div><div class="step__title" data-t="h_chosen"></div><div class="step__meta" data-t="chosen_hint"></div></div></div>
+        <div class="step__body">
+          <div class="actions" style="margin-top:0">
+            <button id="filesAdd" type="button" aria-expanded="false" data-t="files_add"></button>
+            <button id="filesClear" type="button" data-t="files_clear"></button>
+          </div>
+          <div id="browserHomeFiles"></div>
+          <div class="scroll" id="filesTable" hidden>
+            <table>
+              <thead><tr><th scope="col" data-t="col_path"></th><th scope="col"><span data-t="col_remove"></span></th></tr></thead>
+              <tbody id="filesRows"></tbody>
+            </table>
+          </div>
+          <p id="filesNote" class="status" aria-live="polite"></p>
+        </div>
+      </section>
+      <section class="step is-active">
+        <div class="step__head"><span class="step__num">2</span><div><div class="step__title" data-t="h_output"></div><div class="step__meta" data-t="files_out_hint"></div></div></div>
+        <div class="step__body">
+          <label class="field" for="filesOut" data-t="out_label"></label>
+          <div class="row">
+            <input id="filesOut" type="text" autocomplete="off" spellcheck="false">
+            <button id="filesOutBrowse" type="button" aria-expanded="false" data-t="browse"></button>
+          </div>
+          <div id="browserHomeFilesOut"></div>
+          <div class="opts" data-prefix="f"></div>
+          <div class="actions">
+            <button id="filesRun" class="primary" type="button" data-t="run"></button>
+            <button id="filesCancel" class="cancel" type="button" data-t="cancel" hidden></button>
+          </div>
+          <progress id="filesProg" max="100" value="0" hidden></progress>
+          <p id="filesStatus" class="status" aria-live="polite"></p>
+        </div>
+      </section>
+      <div class="card result" id="filesResult" hidden style="margin-top:14px"></div>
     </div>
-    <div class="card">
-      <h2 data-t="h_output"></h2>
-      <label class="field" for="filesOut" data-t="out_label"></label>
-      <div class="row">
-        <input id="filesOut" type="text" autocomplete="off" spellcheck="false">
-        <button id="filesOutBrowse" type="button" aria-expanded="false" data-t="browse"></button>
-      </div>
-      <div id="browserHomeFilesOut"></div>
-      <p class="hint" data-t="files_out_hint"></p>
-      <div class="opts" data-prefix="f"></div>
-      <div class="actions">
-        <button id="filesRun" class="primary" type="button" data-t="run"></button>
-        <button id="filesCancel" class="cancel" type="button" data-t="cancel" hidden></button>
-      </div>
-      <progress id="filesProg" max="100" value="0" hidden></progress>
-      <p id="filesStatus" class="status" aria-live="polite"></p>
-    </div>
-    <div class="card result" id="filesResult" hidden></div>
   </section>
 
   <!-- ===================== incremental tasks ===================== -->
   <section role="tabpanel" id="panel-tasks" aria-labelledby="tab-tasks" tabindex="0" hidden>
-    <div class="card">
-      <h2 data-t="h_tasks"></h2>
-      <p class="hint" data-t="tasks_hint"></p>
-      <div class="scroll">
-        <table>
-          <thead><tr><th scope="col"><span data-t="col_take"></span></th><th scope="col" data-t="col_task"></th><th scope="col" data-t="col_last"></th></tr></thead>
-          <tbody id="taskRows"></tbody>
-        </table>
+    <div style="max-width:920px">
+      <div class="card">
+        <div class="card__head"><h2 data-t="h_tasks"></h2><div class="spacer"></div><button id="taskNew" type="button" class="small" data-t="task_new"></button></div>
+        <div class="card__body">
+          <p class="hint" data-t="tasks_hint"></p>
+          <p class="hint" data-t="task_dots"></p>
+          <div class="taskcards" id="taskRows"></div>
+          <p id="tasksNote" class="status" aria-live="polite"></p>
+          <div class="row" style="margin-top:12px; flex-wrap:wrap">
+            <label for="taskDays" class="hint" data-t="days_label"></label>
+            <input id="taskDays" type="number" min="1" max="36500" value="30" style="width:100px">
+          </div>
+          <div class="actions">
+            <button id="taskPreview" type="button" data-t="task_preview"></button>
+            <button id="taskRun" class="primary" type="button" data-t="task_run"></button>
+            <button id="taskRunAll" type="button" data-t="task_run_all"></button>
+            <button id="tasksCancel" class="cancel" type="button" data-t="cancel" hidden></button>
+          </div>
+          <progress id="tasksProg" max="100" value="0" hidden></progress>
+          <p id="tasksStatus" class="status" aria-live="polite"></p>
+        </div>
       </div>
-      <p id="tasksNote" class="status" aria-live="polite"></p>
-      <div class="row" style="margin-top:8px">
-        <label for="taskDays" data-t="days_label"></label>
-        <input id="taskDays" type="number" min="1" max="36500" value="30">
-      </div>
-      <div class="actions">
-        <button id="taskNew" type="button" data-t="task_new"></button>
-        <button id="taskPreview" type="button" data-t="task_preview"></button>
-        <button id="taskRun" class="primary" type="button" data-t="task_run"></button>
-        <button id="taskRunAll" type="button" data-t="task_run_all"></button>
-        <button id="tasksCancel" class="cancel" type="button" data-t="cancel" hidden></button>
-      </div>
-      <progress id="tasksProg" max="100" value="0" hidden></progress>
-      <p id="tasksStatus" class="status" aria-live="polite"></p>
-    </div>
 
-    <div class="card" id="taskForm" hidden>
-      <h2 id="taskFormHead"></h2>
-      <label class="field" for="taskName" data-t="task_name"></label>
-      <input id="taskName" type="text" autocomplete="off" style="width:100%">
-      <label class="field" for="taskSrc" data-t="task_src"></label>
-      <div class="row">
-        <input id="taskSrc" type="text" autocomplete="off" spellcheck="false">
-        <button id="taskSrcBrowse" type="button" aria-expanded="false" data-t="browse"></button>
+      <div class="card" id="taskForm" hidden style="margin-top:14px">
+        <div class="card__head"><h2 id="taskFormHead"></h2></div>
+        <div class="card__body">
+          <label class="field" for="taskName" data-t="task_name" style="margin-top:0"></label>
+          <input id="taskName" type="text" autocomplete="off" style="width:100%">
+          <label class="field" for="taskSrc" data-t="task_src"></label>
+          <div class="row">
+            <input id="taskSrc" type="text" autocomplete="off" spellcheck="false">
+            <button id="taskSrcBrowse" type="button" aria-expanded="false" data-t="browse"></button>
+          </div>
+          <div id="browserHomeTaskSrc"></div>
+          <label class="field" for="taskOut" data-t="task_out"></label>
+          <div class="row">
+            <input id="taskOut" type="text" autocomplete="off" spellcheck="false">
+            <button id="taskOutBrowse" type="button" aria-expanded="false" data-t="browse"></button>
+          </div>
+          <div id="browserHomeTaskOut"></div>
+          <p class="hint" data-t="task_out_hint" style="margin-top:6px"></p>
+          <div class="actions">
+            <button id="taskSave" class="primary" type="button" data-t="save"></button>
+            <button id="taskBack" type="button" data-t="back"></button>
+          </div>
+          <p id="taskFormStatus" class="status" aria-live="polite"></p>
+        </div>
       </div>
-      <div id="browserHomeTaskSrc"></div>
-      <label class="field" for="taskOut" data-t="task_out"></label>
-      <div class="row">
-        <input id="taskOut" type="text" autocomplete="off" spellcheck="false">
-        <button id="taskOutBrowse" type="button" aria-expanded="false" data-t="browse"></button>
-      </div>
-      <div id="browserHomeTaskOut"></div>
-      <p class="hint" data-t="task_out_hint"></p>
-      <div class="actions">
-        <button id="taskSave" class="primary" type="button" data-t="save"></button>
-        <button id="taskBack" type="button" data-t="back"></button>
-      </div>
-      <p id="taskFormStatus" class="status" aria-live="polite"></p>
-    </div>
 
-    <div class="card" id="tasksResult" hidden>
-      <h2 data-t="h_result"></h2>
-      <p id="tasksResultStatus" class="status" aria-live="polite"></p>
-      <div class="scroll">
-        <table>
-          <thead><tr><th scope="col" data-t="col_task"></th><th scope="col" data-t="col_outcome"></th></tr></thead>
-          <tbody id="tasksResultRows"></tbody>
-        </table>
+      <div class="card" id="tasksResult" hidden style="margin-top:14px">
+        <div class="card__head"><h2 data-t="h_result"></h2></div>
+        <div class="card__body">
+          <p id="tasksResultStatus" class="status" aria-live="polite"></p>
+          <div class="scroll">
+            <table>
+              <thead><tr><th scope="col" data-t="col_task"></th><th scope="col" data-t="col_outcome"></th></tr></thead>
+              <tbody id="tasksResultRows"></tbody>
+            </table>
+          </div>
+          <div id="tasksOutputs"></div>
+        </div>
       </div>
-      <div id="tasksOutputs"></div>
     </div>
   </section>
 
   <!-- ===================== duplicate clean-up ===================== -->
   <section role="tabpanel" id="panel-dedup" aria-labelledby="tab-dedup" tabindex="0" hidden>
-    <div class="card">
-      <h2 data-t="h_dedup"></h2>
-      <p class="hint" data-t="dedup_hint"></p>
-      <label class="field" for="dedupTarget" data-t="dedup_target"></label>
-      <div class="row">
-        <input id="dedupTarget" type="text" autocomplete="off" spellcheck="false">
-        <button id="dedupBrowse" type="button" aria-expanded="false" data-t="browse"></button>
+    <div style="max-width:920px">
+      <div class="stepper" id="dedupSteps" aria-live="polite">
+        <div id="ds1" class="is-active"><span class="step__num">1</span><span data-t="ds_dry"></span></div>
+        <div id="ds2"><span class="step__num">2</span><span data-t="ds_check"></span></div>
+        <div id="ds3"><span class="step__num">3</span><span data-t="ds_clean"></span></div>
       </div>
-      <div id="browserHomeDedup"></div>
-      <label class="field" for="dedupBase" data-t="dedup_base"></label>
-      <textarea id="dedupBase" spellcheck="false"></textarea>
-      <div class="check"><input id="dedupNoDb" type="checkbox"><label for="dedupNoDb"><span><span data-t="dedup_nodb"></span><small data-t="dedup_nodb_d"></small></span></label></div>
-      <div class="actions">
-        <button id="dedupDry" class="primary" type="button" data-t="dedup_dry"></button>
-        <button id="dedupClean" type="button" data-t="dedup_clean" disabled></button>
-        <button id="dedupCancel" class="cancel" type="button" data-t="cancel" hidden></button>
+      <div class="card">
+        <div class="card__head"><h2 data-t="h_dedup"></h2></div>
+        <div class="card__body">
+          <p class="hint" data-t="dedup_hint"></p>
+          <label class="field" for="dedupTarget" data-t="dedup_target"></label>
+          <div class="row">
+            <input id="dedupTarget" type="text" autocomplete="off" spellcheck="false">
+            <button id="dedupBrowse" type="button" aria-expanded="false" data-t="browse"></button>
+          </div>
+          <div id="browserHomeDedup"></div>
+          <label class="field" for="dedupBase" data-t="dedup_base"></label>
+          <textarea id="dedupBase" spellcheck="false"></textarea>
+          <div class="check"><input id="dedupNoDb" type="checkbox"><label for="dedupNoDb"><span><span data-t="dedup_nodb"></span><small data-t="dedup_nodb_d"></small></span></label></div>
+          <div class="actions">
+            <button id="dedupDry" class="primary" type="button" data-t="dedup_dry"></button>
+            <button id="dedupClean" class="cancel" type="button" data-t="dedup_clean" disabled></button>
+            <button id="dedupCancel" class="cancel" type="button" data-t="cancel" hidden></button>
+          </div>
+          <p class="hint" id="dedupBackupNote" data-t="dedup_backup_rule" style="margin-top:8px"></p>
+          <progress id="dedupProg" hidden></progress>
+          <p id="dedupStatus" class="status" aria-live="polite"></p>
+        </div>
       </div>
-      <progress id="dedupProg" hidden></progress>
-      <p id="dedupStatus" class="status" aria-live="polite"></p>
-    </div>
-    <div class="card" id="dedupResult" hidden>
-      <h2 data-t="h_result"></h2>
-      <p id="dedupResultStatus" class="status" aria-live="polite"></p>
-      <h3 id="dedupReportHead" data-t="h_dedup_report" hidden></h3>
-      <pre id="dedupReport" hidden></pre>
-      <details id="dedupOutputBox" hidden>
-        <summary data-t="h_output_tail"></summary>
-        <pre id="dedupOutput"></pre>
-      </details>
+      <div class="card" id="dedupResult" hidden style="margin-top:14px">
+        <div class="card__head"><h2 data-t="h_result"></h2></div>
+        <div class="card__body">
+          <p id="dedupResultStatus" class="status" aria-live="polite"></p>
+          <h3 id="dedupReportHead" data-t="h_dedup_report" hidden></h3>
+          <pre id="dedupReport" hidden></pre>
+          <details id="dedupOutputBox" hidden>
+            <summary data-t="h_output_tail"></summary>
+            <pre id="dedupOutput"></pre>
+          </details>
+        </div>
+      </div>
     </div>
   </section>
-
-  <footer><span data-t="foot_rule"></span> <span id="version"></span></footer>
 </main>
+<footer class="foot"><span data-t="foot_rule"></span> <span id="version"></span></footer>
+
+<!-- confirm -->
+<dialog id="ask" data-strict aria-labelledby="ask-title">
+  <div class="dialog__head"><div><h2 id="ask-title"></h2><p class="dialog__desc" id="ask-text" style="white-space:pre-line; overflow-wrap:anywhere"></p></div></div>
+  <div class="dialog__foot"><div class="spacer"></div><button class="btn" type="button" id="ask-cancel" autofocus></button><button class="btn btn--primary" type="button" id="ask-ok"></button></div>
+</dialog>
+
+<!-- help -->
+<dialog id="dlg-help" aria-labelledby="help-title">
+  <div class="dialog__head"><div><h2 id="help-title" data-t="help"></h2></div></div>
+  <div class="dialog__body" style="font-size:13px; color:var(--ink-2)">
+    <p data-t="sub"></p>
+    <ul style="margin:10px 0 0; padding-left:20px; display:grid; gap:6px">
+      <li data-t="help_batch"></li><li data-t="help_files"></li><li data-t="help_tasks"></li><li data-t="help_dedup"></li>
+    </ul>
+  </div>
+  <div class="dialog__foot"><div class="spacer"></div><button class="btn btn--primary" type="button" data-close data-t="ok"></button></div>
+</dialog>
+
+<!-- upgrade -->
+<dialog id="upgrade" class="dialog--wide" aria-labelledby="upgrade-title">
+  <div class="dialog__head"><div><h2 id="upgrade-title"></h2><p class="dialog__desc" id="up-hint"></p></div></div>
+  <div class="dialog__body">
+    <label class="dropzone dropzone--sm" id="up-drop" tabindex="0" role="button" aria-describedby="up-status">
+      <input type="file" id="up-file" class="vh" accept=".zip,application/zip" tabindex="-1">
+      <span class="dropzone__icon"><svg aria-hidden="true"><use href="#i-package"/></svg></span>
+      <span><strong id="up-drop-strong" class="dropzone__title"></strong><span id="up-drop-rest" class="dropzone__hint"></span></span>
+    </label>
+    <div class="row" style="margin-top:10px; flex-wrap:wrap">
+      <label class="btn btn--sm" id="up-dir-label" tabindex="0" role="button">
+        <input type="file" id="up-dir" class="vh" webkitdirectory multiple tabindex="-1"><svg aria-hidden="true"><use href="#i-folder-open"/></svg><span id="up-dir-text"></span>
+      </label>
+      <button class="btn btn--sm" id="up-rollback" type="button" disabled></button>
+    </div>
+    <div id="up-status" class="ustatus info" aria-live="polite"></div>
+    <div id="up-report" class="ureport"></div>
+  </div>
+  <div class="dialog__foot"><div class="spacer"></div><button class="btn" type="button" id="up-close" data-close data-t="b_close"></button><button class="btn btn--primary" id="up-go" type="button" hidden></button></div>
+</dialog>
 
 <template id="browserTpl">
   <div class="browser">
     <div class="row">
       <select class="b-roots"></select>
-      <button type="button" class="b-up"></button>
+      <button type="button" class="b-up small"></button>
     </div>
     <div class="row" style="margin-top:6px">
       <input type="text" class="b-path mono" autocomplete="off" spellcheck="false">
-      <button type="button" class="b-go"></button>
+      <button type="button" class="b-go small"></button>
     </div>
-    <p class="hint b-count"></p>
+    <p class="hint b-count" style="margin-top:6px"></p>
     <ul class="b-dirs"></ul>
     <ul class="b-files"></ul>
     <p class="status b-status" aria-live="polite"></p>
@@ -358,8 +1116,13 @@
 </template>
 
 <template id="optsTpl">
+  <h3 data-t="opt_mode"></h3>
+  <div class="radio-cards" role="radiogroup">
+    <label class="radio-card o-mode-merge"><input type="radio" class="o-mode" value="merge"><span><strong data-t="mode_merge"></strong><span data-t="opt_merge_d"></span></span></label>
+    <label class="radio-card o-mode-single"><input type="radio" class="o-mode" value="single"><span><strong data-t="mode_single"></strong><span data-t="mode_single_d"></span></span></label>
+  </div>
+  <div class="check o-merge-row"><input class="o-merge" type="checkbox" checked><label><span><span data-t="opt_merge"></span></span></label></div>
   <h3 data-t="h_options"></h3>
-  <div class="check"><input class="o-merge" type="checkbox" checked><label><span><span data-t="opt_merge"></span><small data-t="opt_merge_d"></small></span></label></div>
   <div class="check"><input class="o-inline" type="checkbox" checked><label><span><span data-t="opt_inline"></span><small data-t="opt_inline_d"></small></span></label></div>
   <div class="check"><input class="o-images" type="checkbox"><label><span><span data-t="opt_images"></span><small data-t="opt_images_d"></small></span></label></div>
   <div class="check"><input class="o-sheets" type="checkbox" disabled><label><span><span data-t="opt_sheets"></span><small class="o-sheets-hint"></small></span></label></div>
@@ -367,19 +1130,164 @@
 </template>
 
 <template id="resultTpl">
-  <h2 data-t="h_result"></h2>
-  <p class="status r-status" aria-live="polite"></p>
-  <pre class="r-summary" hidden></pre>
-  <div class="actions"><button type="button" class="r-open" data-t="open_out"></button></div>
-  <p class="status r-open-status" aria-live="polite"></p>
-  <h3 class="r-report-head" data-t="h_report" hidden></h3>
-  <pre class="r-report" hidden></pre>
-  <details class="r-output-box" hidden>
-    <summary data-t="h_output_tail"></summary>
-    <pre class="r-output"></pre>
-  </details>
+  <div class="card__head"><span class="badge r-badge"></span><h2 data-t="h_result"></h2><div class="spacer"></div><button type="button" class="r-open small" data-t="open_out"></button></div>
+  <div class="card__body">
+    <p class="status r-status" aria-live="polite"></p>
+    <div class="mini-grid r-stats" hidden>
+      <div class="mini"><div class="k" data-t="stat_new"></div><div class="v r-s-new" style="color:var(--ok)"></div></div>
+      <div class="mini"><div class="k" data-t="stat_dup"></div><div class="v r-s-dup"></div></div>
+      <div class="mini"><div class="k" data-t="stat_failed"></div><div class="v r-s-failed" style="color:var(--danger)"></div></div>
+      <div class="mini"><div class="k" data-t="stat_chars"></div><div class="v r-s-chars"></div></div>
+    </div>
+    <pre class="r-summary" hidden></pre>
+    <p class="status r-open-status" aria-live="polite"></p>
+    <h3 class="r-report-head" data-t="h_report" hidden></h3>
+    <pre class="r-report" hidden></pre>
+    <details class="r-output-box" hidden>
+      <summary data-t="h_output_tail"></summary>
+      <pre class="r-output"></pre>
+    </details>
+  </div>
 </template>
 
+<div class="toasts" aria-live="polite"></div>
+<script>
+/* 公共交互：主题、菜单、Toast、对话框、抽屉、分段控件键盘 */
+(function () {
+  'use strict';
+  var doc = document, root = doc.documentElement;
+  function systemDark() { return !!(window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches); }
+  function current() { return root.getAttribute('data-theme') || (systemDark() ? 'dark' : 'light'); }
+  function paint() {
+    var dark = current() === 'dark';
+    doc.querySelectorAll('[data-theme-toggle]').forEach(function (b) {
+      b.setAttribute('aria-label', window.themeLabel ? window.themeLabel(dark) : (dark ? '切换到浅色' : '切换到深色'));
+      b.title = b.getAttribute('aria-label');
+      b.textContent = '';
+      var s = doc.createElementNS('http://www.w3.org/2000/svg', 'svg'), u = doc.createElementNS('http://www.w3.org/2000/svg', 'use');
+      u.setAttribute('href', '#i-' + (dark ? 'sun' : 'moon'));
+      s.appendChild(u); b.appendChild(s);
+    });
+  }
+  paint();
+  window.paintTheme = paint;
+  doc.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-theme-toggle]');
+    if (!b) return;
+    var next = current() === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem('edi-theme', next); } catch (err) { /* 无存储时仅本次有效 */ }
+    paint();
+  });
+
+  /* 下拉菜单 */
+  function closeMenus(focusBack) {
+    doc.querySelectorAll('.menu.is-open').forEach(function (m) {
+      m.classList.remove('is-open');
+      var btn = doc.querySelector('[data-menu-btn="' + m.id + '"]');
+      if (btn) { btn.setAttribute('aria-expanded', 'false'); if (focusBack) btn.focus(); }
+    });
+  }
+  doc.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-menu-btn]');
+    if (!btn) { closeMenus(false); return; }
+    var menu = doc.getElementById(btn.getAttribute('data-menu-btn')), was = menu.classList.contains('is-open');
+    closeMenus(false);
+    if (!was) {
+      menu.classList.add('is-open'); btn.setAttribute('aria-expanded', 'true');
+      var first = menu.querySelector('[role=menuitem]:not([disabled])'); if (first) first.focus();
+    }
+  });
+  doc.addEventListener('keydown', function (e) {
+    var open = doc.querySelector('.menu.is-open');
+    if (!open) return;
+    if (e.key === 'Escape') { e.preventDefault(); closeMenus(true); return; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      var items = Array.prototype.slice.call(open.querySelectorAll('[role=menuitem]:not([disabled])'));
+      var i = items.indexOf(doc.activeElement);
+      i = e.key === 'ArrowDown' ? (i + 1) % items.length : (i - 1 + items.length) % items.length;
+      e.preventDefault(); if (items[i]) items[i].focus();
+    }
+  });
+
+  /* Toast：同时最多 3 条，4 秒消失，点击关闭 */
+  var ICON = { ok: 'i-check', warn: 'i-alert', err: 'i-alert', info: 'i-info' };
+  window.toast = function (kind, title, sub, ms) {
+    kind = ICON[kind] ? kind : 'info';
+    var box = doc.querySelector('.toasts');
+    if (!box) { box = doc.createElement('div'); box.className = 'toasts'; box.setAttribute('aria-live', 'polite'); doc.body.appendChild(box); }
+    while (box.children.length >= 3) box.removeChild(box.firstChild);
+    var el = doc.createElement('div'), body = doc.createElement('div'), strong = doc.createElement('strong');
+    el.className = 'toast toast--' + kind; el.setAttribute('role', 'status');
+    var svg = doc.createElementNS('http://www.w3.org/2000/svg', 'svg'), use = doc.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', '#' + ICON[kind]); svg.appendChild(use);
+    body.className = 'toast__body'; strong.textContent = title; body.appendChild(strong);
+    if (sub) { var s = doc.createElement('div'); s.className = 'toast__sub'; s.textContent = sub; body.appendChild(s); }
+    el.appendChild(svg); el.appendChild(body); box.appendChild(el);
+    var t = setTimeout(close, ms || 4000);
+    el.addEventListener('click', close);
+    function close() { clearTimeout(t); el.classList.add('is-out'); setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 200); }
+  };
+
+  /* 对话框：点遮罩关闭（带 data-strict 的除外），[data-close] 关闭 */
+  window.openDialog = function (id) { var d = doc.getElementById(id); if (d && !d.open) d.showModal(); };
+  window.closeDialog = function (id) { var d = doc.getElementById(id); if (d && d.open) d.close(); };
+  doc.addEventListener('mousedown', function (e) {
+    var t = e.target;
+    if (t.tagName === 'DIALOG' && !t.hasAttribute('data-strict')) {
+      var r = t.getBoundingClientRect();
+      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) t.close();
+    }
+  });
+  doc.addEventListener('click', function (e) {
+    var c = e.target.closest('[data-close]');
+    if (c) { var d = c.closest('dialog'); if (d) d.close(); }
+  });
+
+  /* 单选卡片：由脚本同步 .is-checked */
+  doc.addEventListener('change', function (e) {
+    var input = e.target.closest('.radio-card input');
+    if (!input) return;
+    doc.querySelectorAll('.radio-card input[name="' + input.name + '"]').forEach(function (i) {
+      i.closest('.radio-card').classList.toggle('is-checked', i.checked);
+    });
+  });
+
+  /* 抽屉：关闭后焦点回到打开前的元素 */
+  var drawerFrom = null;
+  window.openDrawer = function (id) {
+    var d = doc.getElementById(id); if (!d) return;
+    drawerFrom = doc.activeElement;
+    d.classList.add('is-open'); d.setAttribute('aria-hidden', 'false');
+    var s = doc.getElementById(id + '-scrim'); if (s) s.classList.add('is-open');
+    var f = d.querySelector('[data-autofocus]') || d.querySelector('button'); if (f) f.focus();
+  };
+  window.closeDrawer = function (id) {
+    var d = doc.getElementById(id); if (!d || !d.classList.contains('is-open')) return;
+    d.classList.remove('is-open'); d.setAttribute('aria-hidden', 'true');
+    var s = doc.getElementById(id + '-scrim'); if (s) s.classList.remove('is-open');
+    if (drawerFrom && drawerFrom.focus) drawerFrom.focus();
+  };
+  doc.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    var d = doc.querySelector('.drawer.is-open');
+    if (d && !doc.querySelector('dialog[open]')) closeDrawer(d.id);
+  });
+
+  /* 分段控件 / 页签：左右方向键切换 */
+  doc.addEventListener('keydown', function (e) {
+    if (e.defaultPrevented || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+    var tab = e.target.closest('[role=tab],[role=radio]');
+    if (!tab) return;
+    var list = tab.parentNode, items = Array.prototype.slice.call(list.querySelectorAll(':scope > [role=' + tab.getAttribute('role') + ']:not([disabled])'));
+    var i = items.indexOf(tab);
+    if (i < 0) return;
+    i = e.key === 'ArrowRight' ? (i + 1) % items.length : (i - 1 + items.length) % items.length;
+    e.preventDefault(); items[i].focus(); items[i].click();
+  });
+})();
+
+</script>
 <script>
 'use strict';
 const TOKEN = new URLSearchParams(location.search).get('t') || '';
@@ -391,7 +1299,7 @@ const S = {
     title: 'Documents to knowledge base', quit: 'Quit',
     sub: 'Turns Word, Excel, PowerPoint, PDF and mail files into Markdown for a knowledge base. The conversion is done by doc2kb_core.py in this folder.',
     tabs: 'Modes', tab_batch: 'Folder batch', tab_files: 'Chosen files', tab_tasks: 'Incremental tasks', tab_dedup: 'Duplicate clean-up',
-    h_source: '1. Source folder', src_label: 'Folder with the documents (absolute path or ~/…)',
+    h_source: 'Source folder', src_label: 'Folder with the documents (absolute path or ~/…)',
     browse: 'Browse…', since_label: 'Only documents changed on or after a date',
     since_hint: 'The document\'s own time is used when it has one, else the file system time.',
     scan: 'Scan', cancel: 'Cancel', save: 'Save', back: 'Back',
@@ -401,7 +1309,7 @@ const S = {
     scan_none: 'No document to process in this folder.',
     scan_none_filtered: 'No document to process: {0} files are older than the date.',
     scan_done: 'Found {0} documents.',
-    h_files: '2. Files to process',
+    h_files: 'Files to process',
     list_summary: '{0} documents found; untick the ones you do not want.',
     list_filtered: ' {0} files older than the date are left out.',
     tick_all: 'Tick all', tick_none: 'Untick all',
@@ -411,9 +1319,9 @@ const S = {
     pdf_missing: '{0} PDF files will be skipped: pdftotext (poppler-utils) is not installed. Install it and run again to include them.',
     legacy_summary: '{0} legacy-format files are skipped (.msg / .vsd)',
     legacy_hint: 'Save the mails as .eml in the mail program and run again.',
-    h_output: '3. Output', out_label: 'Output folder (created when missing)',
+    h_output: 'Output', out_label: 'Output folder (created when missing)',
     h_options: 'Options',
-    opt_merge: 'Merge', opt_merge_d: 'Index and all text in one md; untick for one md per document.',
+    opt_merge: 'Merge', opt_merge_d: 'Index and all text in one md.',
     opt_inline: 'Expand embedded Excel', opt_inline_d: 'Workbooks embedded in docx become tables in the text.',
     opt_images: 'Export images', opt_images_d: 'Writes picture files; without it the text keeps the image anchors and runs faster.',
     opt_sheets_d: 'Tiles exported pictures 4×4 into numbered sheets.', opt_sheets: 'Contact sheets',
@@ -453,7 +1361,7 @@ const S = {
     cancel_single_report: ' The report lists them.',
     open_out: 'Open output folder', open_failed: 'Opening failed: {0}. Open the folder yourself.',
     h_report: 'Report (summary)', h_output_tail: 'Program output',
-    h_chosen: '1. Files', chosen_hint: 'Add documents or archives from one or more folders; legacy formats (.msg / .vsd) are listed but not converted.',
+    h_chosen: 'Files', chosen_hint: 'Add documents or archives from one or more folders; legacy formats (.msg / .vsd) are listed but not converted.',
     files_add: 'Add files…', files_clear: 'Clear list', files_count: '{0} files chosen.', files_none: 'No file chosen yet.',
     files_out_hint: 'Chosen files are always converted again; existing md files of the same name are replaced (you are asked first).',
     h_tasks: 'Incremental tasks',
@@ -530,7 +1438,7 @@ const S = {
     title: '文档转知识库', quit: '退出',
     sub: '把 Word、Excel、PowerPoint、PDF 和邮件转成供知识库使用的 Markdown，转换由同目录的 doc2kb_core.py 完成。',
     tabs: '模式', tab_batch: '目录批量', tab_files: '指定文件', tab_tasks: '增量任务', tab_dedup: '清理重复',
-    h_source: '1. 源目录', src_label: '文档所在目录（绝对路径或 ~/ 开头）',
+    h_source: '源目录', src_label: '文档所在目录（绝对路径或 ~/ 开头）',
     browse: '浏览……', since_label: '只处理某个日期（含当天）之后修改的文档',
     since_hint: '时间优先取文档内部属性，取不到时用文件系统时间。',
     scan: '扫描', cancel: '取消', save: '保存', back: '返回',
@@ -540,7 +1448,7 @@ const S = {
     scan_none: '该目录下没有可处理的文档。',
     scan_none_filtered: '没有可处理的文档：有 {0} 个文件早于所选日期。',
     scan_done: '共找到 {0} 个文档。',
-    h_files: '2. 要处理的文件',
+    h_files: '要处理的文件',
     list_summary: '共找到 {0} 个文档，取消勾选可排除不想处理的文件。',
     list_filtered: '另有 {0} 个文件早于所选日期，已排除。',
     tick_all: '全部勾选', tick_none: '全部取消',
@@ -550,9 +1458,9 @@ const S = {
     pdf_missing: '{0} 个 PDF 将被跳过：未安装 pdftotext（poppler-utils）。安装后重新运行即可纳入。',
     legacy_summary: '{0} 个旧版格式文件将被跳过（.msg / .vsd）',
     legacy_hint: '请在邮件程序里另存为 .eml 后重新运行。',
-    h_output: '3. 输出', out_label: '输出目录（不存在时自动创建）',
+    h_output: '输出', out_label: '输出目录（不存在时自动创建）',
     h_options: '选项',
-    opt_merge: '合并输出', opt_merge_d: '索引与全部正文写进一个 md；取消则每份文档一个 md。',
+    opt_merge: '合并输出', opt_merge_d: '索引与全部正文写进一个 md。',
     opt_inline: '展开内嵌 Excel', opt_inline_d: '把 docx 里嵌入的 Excel 附件展开成正文表格。',
     opt_images: '导出图片', opt_images_d: '写出图片文件；不勾选时正文仍保留图片锚点，处理更快。',
     opt_sheets_d: '把导出的图片按 4×4 拼成带编号的大图。', opt_sheets: '合并拼图',
@@ -592,7 +1500,7 @@ const S = {
     cancel_single_report: '报告记录了这些文档。',
     open_out: '打开输出目录', open_failed: '打开失败：{0}。请手动打开该目录。',
     h_report: '报告（摘要）', h_output_tail: '程序输出',
-    h_chosen: '1. 文件', chosen_hint: '可从一个或多个目录添加文档或压缩包；旧版格式（.msg / .vsd）会列出但不转换。',
+    h_chosen: '文件', chosen_hint: '可从一个或多个目录添加文档或压缩包；旧版格式（.msg / .vsd）会列出但不转换。',
     files_add: '添加文件……', files_clear: '清空列表', files_count: '已选 {0} 个文件。', files_none: '还没有选择文件。',
     files_out_hint: '指定的文件每次都重新转换，输出目录中同名的 md 会被替换（替换前先确认）。',
     h_tasks: '增量任务',
@@ -666,16 +1574,92 @@ const S = {
     },
   }
 };
+Object.assign(S.en, {
+  app_sub: 'Office, PDF and mail files → Markdown for a knowledge base',
+  lang_label: 'Language', help: 'Help', more: 'More', ok: 'OK',
+  menu_rollback: 'Roll back to previous version…',
+  step_wait_scan: 'Available after the scan in step 1.',
+  step_output_meta: 'Where the md files go and how they are written',
+  src_done: '{0} documents · {1}',
+  batch_zero: '0 = no batches',
+  rail_task: 'This run', k_src: 'Source', k_ticked: 'Ticked', k_out: 'Output', k_mode: 'Mode',
+  ticked_of: '{0} of {1}', run_n: 'Convert {0} documents', rail_none: 'Not scanned',
+  offline_title: 'Runs offline', offline_text: 'The page talks only to this computer (127.0.0.1) with a one-time token; nothing is uploaded.',
+  opt_mode: 'Output mode', mode_merge: 'Merge into one md', mode_single: 'One md per document', mode_single_d: 'Each document becomes its own md file; the report lists them.',
+  stat_new: 'Converted', stat_dup: 'Duplicates', stat_failed: 'Failed', stat_chars: 'Characters',
+  badge_ok: 'Done', badge_warn: 'Check', badge_bad: 'Failed',
+  task_dots: 'Green: has run. Grey: not run yet. Yellow: the source folder is missing.',
+  last_run_at: 'Last run {0}',
+  ds_dry: 'Dry run (read only)', ds_check: 'Check the report', ds_clean: 'Clean up (backed up first)',
+  dedup_backup_rule: 'Clean up becomes available after a dry run that finds duplicates. The original is first backed up as <file>.bak-<date>-<time>.',
+  job_scan: 'Scanning', job_run: 'Converting', job_files: 'Converting', job_tasks: 'Running tasks', job_dedup: 'Comparing', job_upgrade: 'Upgrading',
+  cancel_requested: 'Cancelling…',
+  ask_title: 'Please confirm', ask_ok: 'Continue', ask_back: 'Back', ask_delete: 'Delete', ask_quit: 'Quit', ask_clean: 'Clean up', ask_replace: 'Replace and start', ask_save: 'Save',
+  help_batch: 'Folder batch: scan a folder, tick the documents, choose the output and start.',
+  help_files: 'Chosen files: add single documents from several folders and convert them together.',
+  help_tasks: 'Incremental tasks: convert only what changed since the last run of each task.',
+  help_dedup: 'Duplicate clean-up: a dry run reports duplicate sections; only then can the file be cleaned.',
+  theme_light: 'Switch to light', theme_dark: 'Switch to dark',
+});
+Object.assign(S.zh, {
+  app_sub: '办公文档、PDF 和邮件 → 供知识库使用的 Markdown',
+  lang_label: '界面语言', help: '使用说明', more: '更多', ok: '好',
+  menu_rollback: '退回上一版……',
+  step_wait_scan: '完成第 1 步的扫描后在这里继续。',
+  step_output_meta: 'md 写到哪里、怎样写',
+  src_done: '{0} 份文档 · {1}',
+  batch_zero: '0 表示不分批',
+  rail_task: '本次任务', k_src: '源目录', k_ticked: '已选', k_out: '输出', k_mode: '方式',
+  ticked_of: '{0} / {1} 份', run_n: '开始转换 {0} 份', rail_none: '未扫描',
+  offline_title: '离线运行', offline_text: '页面只连本机 127.0.0.1，带一次性令牌；不联网，不上传文件。',
+  opt_mode: '合并方式', mode_merge: '合并成一个 md', mode_single: '每份文档一个 md', mode_single_d: '每份文档单独写成一个 md，报告列出全部文件。',
+  stat_new: '新转换', stat_dup: '重复', stat_failed: '失败', stat_chars: '字数',
+  badge_ok: '已完成', badge_warn: '需注意', badge_bad: '失败',
+  task_dots: '绿点：运行过；灰点：尚未运行；黄点：源目录不存在。',
+  last_run_at: '上次运行 {0}',
+  ds_dry: '试运行（只读）', ds_check: '核对报告', ds_clean: '清理（先备份）',
+  dedup_backup_rule: '试运行找到重复内容后才能清理。清理前原文件先备份为「文件名.bak-日期-时间」。',
+  job_scan: '正在扫描', job_run: '正在转换', job_files: '正在转换', job_tasks: '正在运行任务', job_dedup: '正在比对', job_upgrade: '正在升级',
+  cancel_requested: '正在取消……',
+  ask_title: '请确认', ask_ok: '继续', ask_back: '返回', ask_delete: '删除', ask_quit: '退出', ask_clean: '确认清理', ask_replace: '替换并开始', ask_save: '保存',
+  help_batch: '目录批量：扫描目录，勾选文档，设好输出后开始转换。',
+  help_files: '指定文件：从多个目录挑选文档，一起转换。',
+  help_tasks: '定时任务：每个任务只转换上次运行后变化的文档。',
+  help_dedup: '清理重复：先试运行出报告，确认后才能清理，原文件先备份。',
+  theme_light: '切换到浅色', theme_dark: '切换到深色',
+});
+// every key must exist in both dictionaries: report the missing ones
+(function () {
+  ['en', 'zh'].forEach(a => { const b = a === 'en' ? 'zh' : 'en';
+    Object.keys(S[a]).forEach(k => { if (!(k in S[b])) console.error('doc2kb: missing ' + b + ' text: ' + k); }); });
+})();
 let L = S.en;
 function t(key) {
   const args = Array.prototype.slice.call(arguments, 1);
+  if (!(key in L)) console.error('doc2kb: missing text: ' + key);
   return (L[key] || key).replace(/\{(\d)\}/g, (m, i) => String(args[+i]));
 }
 function applyTexts(root) {
   (root || document).querySelectorAll('[data-t]').forEach(el => { el.textContent = t(el.dataset.t); });
   (root || document).querySelectorAll('[data-t-label]').forEach(el => { el.setAttribute('aria-label', t(el.dataset.tLabel)); });
   document.title = t('title');
+  if (window.paintTheme) window.paintTheme();
 }
+
+let askResolve = null;
+// the page's own confirm: resolves true when the action is confirmed
+function ask(text, okLabel, title) {
+  return new Promise(resolve => {
+    $('ask-title').textContent = title || t('ask_title'); $('ask-text').textContent = text;
+    $('ask-ok').textContent = okLabel || t('ask_ok'); $('ask-cancel').textContent = t('ask_back');
+    askResolve = resolve; openDialog('ask'); $('ask-cancel').focus();
+  });
+}
+function askDone(v) { const r = askResolve; askResolve = null; if ($('ask').open) $('ask').close(); if (r) r(v); }
+$('ask-ok').addEventListener('click', () => askDone(true));
+$('ask-cancel').addEventListener('click', () => askDone(false));
+$('ask').addEventListener('close', () => { if (askResolve) askDone(false); });
+window.themeLabel = dark => t(dark ? 'theme_light' : 'theme_dark');
 
 let alive = true, status = null, pollTimer = null, jobRunning = false, jobKind = null;
 
@@ -704,6 +1688,7 @@ function cellText(tr, text, cls) {
   tr.appendChild(td);
   return td;
 }
+function icon(id) { const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'), u = document.createElementNS('http://www.w3.org/2000/svg', 'use'); u.setAttribute('href', '#i-' + id); s.setAttribute('aria-hidden', 'true'); s.appendChild(u); return s; }
 function dirname(p) { const i = p.lastIndexOf('/'); return i > 0 ? p.slice(0, i) : '/'; }
 function joinPath(dir, name) { return dir === '/' ? '/' + name : dir + '/' + name; }
 
@@ -712,6 +1697,7 @@ function serviceGone(msg) {
   alive = false;
   $('closed').textContent = msg || t('closed');
   $('closed').hidden = false;
+  jobbar(null);
   document.querySelectorAll('button, input, select, textarea').forEach(el => { el.disabled = true; });
   if (pollTimer) clearInterval(pollTimer);
   if (typeof upButtons === 'function') upButtons();
@@ -738,6 +1724,7 @@ function selectTab(tab, focus) {
     $(x.getAttribute('aria-controls')).hidden = !on;
   });
   if (focus !== false) tab.focus();
+  try { sessionStorage.setItem('doc2kb-tab', tab.id); } catch (e) { /* no storage */ }
   if (tab.id === 'tab-tasks') loadTasks();
 }
 tabs.forEach((tab, i) => {
@@ -802,7 +1789,7 @@ function showBrowser(button, home, opts) {
       }
       d.dirs.forEach(name => {
         const li = document.createElement('li'), b = document.createElement('button');
-        b.type = 'button'; b.textContent = '📁 ' + name;
+        b.type = 'button'; b.appendChild(icon('folder')); b.appendChild(document.createTextNode(name));
         b.addEventListener('click', () => load(joinPath(d.path, name)).then(() => { const f = q('.b-dirs button'); if (f) f.focus(); }));
         li.appendChild(b); ul.appendChild(li);
       });
@@ -856,6 +1843,8 @@ document.querySelectorAll('.opts').forEach(box => {
     const input = row.querySelector('input'), label = row.querySelector('label');
     input.id = pre + '-opt' + i; label.htmlFor = input.id;
   });
+  box.querySelectorAll('.o-mode').forEach(r => { r.name = pre + '-mode'; r.addEventListener('change', () => {
+    box.querySelector('.o-merge').checked = box.querySelector('.o-mode[value=merge]').checked; syncOptions(); }); });
   box.querySelector('.o-merge').addEventListener('change', syncOptions);
   box.querySelector('.o-images').addEventListener('change', syncOptions);
 });
@@ -873,7 +1862,14 @@ function syncOptions() {
     if (sheets.disabled) sheets.checked = false;
     opt(prefix, 'o-sheets-hint').textContent = !montage ? t('sheets_no_tool') : (images.checked ? t('opt_sheets_d') : t('sheets_need_images'));
   });
+  ['b', 'f'].forEach(prefix => {
+    const m = opt(prefix, 'o-merge').checked, box = document.querySelector('.opts[data-prefix="' + prefix + '"]');
+    box.querySelector('.o-mode[value=merge]').checked = m; box.querySelector('.o-mode[value=single]').checked = !m;
+    box.querySelectorAll('.radio-card').forEach(c => c.classList.toggle('is-checked', c.querySelector('input').checked));
+    box.querySelectorAll('.o-mode').forEach(r => { r.disabled = jobRunning; });
+  });
   const merged = opt('b', 'o-merge').checked;
+  railUpdate();
   $('existingLegend').textContent = t(merged ? 'existing_legend_merge' : 'existing_legend');
   $('exSkipLabel').textContent = t(merged ? 'existing_skip_merge' : 'existing_skip');
   $('exRedoLabel').textContent = t(merged ? 'existing_redo_merge' : 'existing_redo');
@@ -911,6 +1907,15 @@ function renderConversion(card, job) {
   if ((r.skipped_pdf || []).length) { lines.push(t('pdf_skipped', r.skipped_pdf.length)); if (kind === 'ok') kind = 'warn'; }
   if ((r.skipped_legacy || []).length) { lines.push(t('legacy_skipped', r.skipped_legacy.length)); if (kind === 'ok') kind = 'warn'; }
   say(q('.r-status'), lines.join('\n'), kind);
+  q('.r-badge').className = 'badge r-badge badge--' + (kind === 'bad' ? 'danger' : kind);
+  q('.r-badge').textContent = t('badge_' + kind);
+  const hasStats = st.new !== undefined;
+  q('.r-stats').hidden = !hasStats;
+  if (hasStats) {
+    const n = v => (v === undefined || v === '' ? '0' : Number(v).toLocaleString(document.documentElement.lang));
+    q('.r-s-new').textContent = n(st.new); q('.r-s-dup').textContent = n(st.dup);
+    q('.r-s-failed').textContent = n(st.failed); q('.r-s-chars').textContent = n(st.chars);
+  }
   q('.r-summary').hidden = !(r.summary && r.summary.length);
   q('.r-summary').textContent = (r.summary || []).join('\n');
   q('.r-report-head').hidden = q('.r-report').hidden = !r.report;
@@ -920,7 +1925,7 @@ function renderConversion(card, job) {
   q('.r-output').textContent = job.output || '';
   q('.r-open').hidden = !(status && status.tools['xdg-open']);
   say(q('.r-open-status'), '');
-  q('.r-status').scrollIntoView({block: 'nearest'});
+  card.scrollIntoView({block: 'nearest', behavior: 'smooth'});
 }
 // tasks: which task runs, and within it the converter's batch and document once it has started
 function renderTaskProgress(job) {
@@ -943,10 +1948,10 @@ function renderProgress(prog, line, job) {
 }
 // confirm what a run would replace; resolves to true when the run may start
 function confirmRun(body) {
-  return post('/api/check', body).then(c => {
-    if (c.unfinished && body.force && !confirm(t('confirm_restart', c.out))) return false;
-    if (c.replace.length) return confirm(t('confirm_replace', c.out, c.replace.join('\n')));
-    if (body.force && c.existing_md) return confirm(t('confirm_redo', c.existing_md, c.out));
+  return post('/api/check', body).then(async c => {
+    if (c.unfinished && body.force && !await ask(t('confirm_restart', c.out), t('ask_ok'))) return false;
+    if (c.replace.length) return ask(t('confirm_replace', c.out, c.replace.join('\n')), t('ask_replace'));
+    if (body.force && c.existing_md) return ask(t('confirm_redo', c.existing_md, c.out), t('ask_replace'));
     return true;
   });
 }
@@ -964,8 +1969,34 @@ $('src').addEventListener('input', () => {
   scan = null; rowsPending = false;
   $('listCard').hidden = true; $('runCard').hidden = true; $('batchResult').hidden = true;
   say('scanStatus', '');
+  refreshSteps();
 });
-$('out').addEventListener('input', () => { outEdited = true; });
+$('out').addEventListener('input', () => { outEdited = true; railUpdate(); });
+// step states: 1 is done once a scan listed files, 2 and 3 open with the list
+function refreshSteps() {
+  const listed = !$('listCard').hidden, run = !$('runCard').hidden;
+  $('bstep1').classList.toggle('is-done', listed); $('bstep1').classList.toggle('is-active', !listed);
+  const num = $('bstep1-num'); num.textContent = ''; if (listed) num.appendChild(icon('check')); else num.textContent = '1';
+  $('bstep1-meta').textContent = listed && scan ? t('src_done', scan.files.length, scan.src) : '';
+  ['bstep2', 'bstep3'].forEach((id, i) => {
+    const open = i ? run : listed;
+    $(id).classList.toggle('is-locked', !open); $(id).classList.toggle('is-active', open);
+    $(id + '-empty').hidden = open;
+  });
+  if (!listed) $('listSummary').textContent = '';
+  railUpdate();
+}
+function railUpdate() {
+  if (!$('kSrc')) return;
+  const n = scan ? tickedRels().length : 0, total = scan ? scan.files.length : 0;
+  $('kSrc').textContent = scan ? scan.src : ($('src').value || '—');
+  $('kTicked').textContent = scan ? t('ticked_of', n, total) : '—';
+  $('kOut').textContent = $('out').value || '—';
+  $('kMode').textContent = t(opt('b', 'o-merge') && opt('b', 'o-merge').checked ? 'mode_merge' : 'mode_single');
+  $('railBadge').textContent = scan ? t('ticked_of', n, total) : t('rail_none');
+  $('railBadge').className = 'badge' + (n ? ' badge--primary' : '');
+  if (!jobRunning || jobKind !== 'run') $('run').textContent = n ? t('run_n', n) : t('run');
+}
 
 $('scan').addEventListener('click', () => {
   const body = {src: $('src').value, since: $('useSince').checked ? $('since').value : ''};
@@ -998,6 +2029,8 @@ function renderScan(job) {
   $('listCard').hidden = !r.files.length;
   $('runCard').hidden = !r.files.length;
   if (!outEdited || !$('out').value.trim()) { $('out').value = r.out_default; outEdited = false; }
+  refreshSteps();
+  if (r.files.length) $('bstep2').scrollIntoView({block: 'nearest', behavior: 'smooth'});
 }
 // a long list is built in steps, so the page keeps responding; the start button waits for the end
 const ROWS_STEP = 500;
@@ -1044,6 +2077,7 @@ function updateTicked() {
   const rels = tickedRels(), total = scan ? scan.files.length : 0, note = pdfNote(rels);
   say('listNote', t('ticked', rels.length, total) + (note ? '\n' + note : ''), note ? 'warn' : 'info');
   if (!jobRunning) $('run').disabled = !rels.length;
+  railUpdate();
 }
 $('all').addEventListener('click', () => { document.querySelectorAll('#fileRows input').forEach(b => { b.checked = true; }); updateTicked(); });
 $('none').addEventListener('click', () => { document.querySelectorAll('#fileRows input').forEach(b => { b.checked = false; }); updateTicked(); });
@@ -1122,30 +2156,30 @@ function tickedTasks() {
 }
 function renderTasks() {
   const keep = tickedTasks();
-  const tb = $('taskRows'); tb.textContent = '';
+  const box = $('taskRows'); box.textContent = '';
   tasks.forEach((task, i) => {
-    const tr = document.createElement('tr'); tr.dataset.name = task.name;
-    const c0 = document.createElement('td'), box = document.createElement('input');
-    box.type = 'checkbox'; box.id = 'task' + i; box.dataset.name = task.name; box.checked = keep.indexOf(task.name) >= 0;
-    box.addEventListener('change', updateTaskNote);
-    c0.appendChild(box); tr.appendChild(c0);
-    const c1 = document.createElement('td'); c1.className = 'rel';
-    const lab = document.createElement('label'); lab.htmlFor = box.id;
-    const strong = document.createElement('strong'); strong.textContent = task.name; lab.appendChild(strong);
-    c1.appendChild(lab);
-    [task.src, '→ ' + task.out].forEach(text => { const d = document.createElement('div'); d.className = 'hint mono'; d.textContent = text; c1.appendChild(d); });
-    if (!task.src_ok) { const d = document.createElement('div'); d.className = 'bad'; d.textContent = t('src_missing_short'); c1.appendChild(d); }
-    const c3 = document.createElement('div'); c3.className = 'actions'; c3.style.marginTop = '4px';
-    c1.appendChild(c3);
-    tr.appendChild(c1);
-    cellText(tr, task.last_run || t('never_run'));
+    const card = document.createElement('div'); card.className = 'taskcard'; card.dataset.name = task.name;
+    const box1 = document.createElement('input');
+    box1.type = 'checkbox'; box1.id = 'task' + i; box1.dataset.name = task.name; box1.checked = keep.indexOf(task.name) >= 0;
+    box1.addEventListener('change', updateTaskNote);
+    const body = document.createElement('div');
+    const head = document.createElement('label'); head.htmlFor = box1.id; head.className = 'taskcard__name';
+    const dot = document.createElement('span'); dot.className = 'sdot' + (!task.src_ok ? ' warn' : task.last_run ? ' ok' : '');
+    dot.title = !task.src_ok ? t('src_missing_short') : task.last_run ? t('last_run_at', task.last_run) : t('never_run');
+    const strong = document.createElement('span'); strong.textContent = task.name;
+    head.appendChild(dot); head.appendChild(strong); body.appendChild(head);
+    const path = document.createElement('div'); path.className = 'taskcard__path'; path.textContent = task.src + '  →  ' + task.out; body.appendChild(path);
+    const meta = document.createElement('div'); meta.className = 'taskcard__meta';
+    meta.textContent = task.last_run ? t('last_run_at', task.last_run) : t('never_run'); body.appendChild(meta);
+    if (!task.src_ok) { const d = document.createElement('div'); d.className = 'bad'; d.textContent = t('src_missing_short'); body.appendChild(d); }
+    const acts = document.createElement('div'); acts.className = 'taskcard__acts';
     [['t-edit', 'edit', () => openTaskForm(task)], ['t-del', 'del', () => deleteTask(task)]].forEach(x => {
       const b = document.createElement('button'); b.type = 'button'; b.className = 'small ' + x[0];
       b.textContent = t(x[1]); b.setAttribute('aria-label', t(x[1]) + ' ' + task.name);
       b.addEventListener('click', x[2]);
-      c3.appendChild(b);
+      acts.appendChild(b);
     });
-    tb.appendChild(tr);
+    card.appendChild(box1); card.appendChild(body); card.appendChild(acts); box.appendChild(card);
   });
   updateTaskNote();
 }
@@ -1173,21 +2207,26 @@ $('taskSave').addEventListener('click', () => {
   const body = {name: $('taskName').value, src: $('taskSrc').value, out: $('taskOut').value};
   if (editing) {
     body.action = 'edit'; body.old = editing.name;
-    const newOut = body.out.trim().replace(/\/+$/, '');
-    if (editing.last_run && newOut !== editing.out && !confirm(t('task_out_changed', editing.out, newOut, $('taskDays').value))) return;
   } else {
     body.action = 'add';
   }
+  const newOut = body.out.trim().replace(/\/+$/, '');
+  (editing && editing.last_run && newOut !== editing.out
+    ? ask(t('task_out_changed', editing.out, newOut, $('taskDays').value), t('ask_save')) : Promise.resolve(true)).then(ok => {
+  if (!ok) return;
   post('/api/tasks', body).then(() => {
     closeTaskForm();
     say('tasksStatus', t('task_saved'), 'ok');
     return loadTasks();
   }).catch(e => say('taskFormStatus', t('task_save_failed', e.message), 'bad'));
+  });
 });
 function deleteTask(task) {
-  if (!confirm(t('task_del_confirm', task.name))) return;
-  post('/api/tasks', {action: 'delete', name: task.name}).then(loadTasks)
-    .catch(e => say('tasksStatus', t('task_del_failed', e.message), 'bad'));
+  ask(t('task_del_confirm', task.name), t('ask_delete')).then(ok => {
+    if (!ok) return;
+    post('/api/tasks', {action: 'delete', name: task.name}).then(loadTasks)
+      .catch(e => say('tasksStatus', t('task_del_failed', e.message), 'bad'));
+  });
 }
 function runTasks(names, dry) {
   if (!names.length) { say('tasksStatus', t('tasks_none_ticked'), 'warn'); return; }
@@ -1242,14 +2281,19 @@ function dedupBody(dry) {
           base: $('dedupBase').value.split('\n').map(x => x.trim()).filter(Boolean)};
 }
 function sameRequest(a, b) { return a && b && a.target === b.target && a.base.join('\n') === b.base.join('\n'); }
-['dedupTarget', 'dedupBase'].forEach(id => $(id).addEventListener('input', () => { dryDone = null; $('dedupClean').disabled = true; }));
+['dedupTarget', 'dedupBase'].forEach(id => $(id).addEventListener('input', () => { dryDone = null; $('dedupClean').disabled = true; dedupSteps(); }));
 $('dedupBrowse').addEventListener('click', () => showBrowser($('dedupBrowse'), 'browserHomeDedup', {
   mode: 'md', start: () => $('dedupTarget').value.trim() ? dirname($('dedupTarget').value.trim()) : '', onPick: pickInto($('dedupTarget'))}));
-function runDedup(dry) {
+function dedupSteps() {
+  const stage = dryDone ? 3 : $('dedupResult').hidden ? 1 : 2;
+  [1, 2, 3].forEach(i => { const s = $('ds' + i); s.classList.toggle('is-active', i === stage); s.classList.toggle('is-done', i < stage);
+    const n = s.querySelector('.step__num'); n.textContent = ''; if (i < stage) n.appendChild(icon('check')); else n.textContent = String(i); });
+}
+async function runDedup(dry) {
   const body = dedupBody(dry);
   if (!dry) {
     if (!sameRequest(body, dryDone)) return;
-    if (!confirm(t('dedup_confirm', dryDone.duplicate, dryDone.sections, body.target))) return;
+    if (!await ask(t('dedup_confirm', dryDone.duplicate, dryDone.sections, body.target), t('ask_clean'))) return;
   }
   say('dedupStatus', t('dedup_running'), 'info');
   $('dedupResult').hidden = true;
@@ -1276,6 +2320,7 @@ function renderDedup(job) {
   $('dedupOutputBox').hidden = !job.output;
   $('dedupOutputBox').open = job.rc !== 0;
   $('dedupOutput').textContent = job.output || '';
+  dedupSteps();
 }
 
 // ---------- one task at a time: busy state, cancel and polling
@@ -1290,8 +2335,9 @@ function setBusy(on, kind) {
   document.querySelectorAll('#fileRows input, .opts input').forEach(b => { b.disabled = on || !alive; });
   Object.keys(CANCEL).forEach(k => { $(CANCEL[k]).hidden = !(on && k === kind); });
   Object.keys(PROG).forEach(k => { $(PROG[k]).hidden = !(on && k === kind); });
-  if (on) closeBrowser();
+  if (on) { closeBrowser(); $('job-cancel').disabled = false; $('job-cancel').querySelector('span').textContent = t('cancel'); jobbar({kind: kind}); }
   else {
+    jobbar(null);
     $('run').disabled = !scan || rowsPending || !tickedRels().length;
     $('filesRun').disabled = !chosen.length;
     $('dedupClean').disabled = !dryDone;
@@ -1299,7 +2345,24 @@ function setBusy(on, kind) {
   }
   syncOptions();
 }
-document.querySelectorAll('button.cancel').forEach(b => b.addEventListener('click', () => post('/api/cancel').catch(() => {})));
+function cancelJob() {
+  $('job-cancel').disabled = true; $('job-cancel').querySelector('span').textContent = t('cancel_requested');
+  post('/api/cancel').catch(() => {});
+}
+document.querySelectorAll('button.cancel').forEach(b => { if (b.id !== 'dedupClean') b.addEventListener('click', cancelJob); });
+$('job-cancel').addEventListener('click', cancelJob);
+// the task bar under the title: what runs, the current document and N of M
+function jobbar(job) {
+  const bar = $('jobbar');
+  if (!job || !job.kind) { bar.hidden = true; return; }
+  bar.hidden = false;
+  $('job-cancel').hidden = job.kind === 'upgrade';
+  $('job-label').textContent = t('job_' + job.kind);
+  $('job-detail').textContent = job.kind === 'tasks' && job.task_name ? job.task_name + (job.current ? ' · ' + job.current : '') : (job.current || job.detail || '');
+  const fill = $('job-bar');
+  if (job.total) { fill.classList.remove('progress__bar--indeterminate'); fill.style.width = Math.max(2, Math.floor((job.cur - 1) * 100 / job.total)) + '%'; $('job-pct').textContent = job.cur + ' / ' + job.total; }
+  else { fill.classList.add('progress__bar--indeterminate'); fill.style.width = ''; $('job-pct').textContent = ''; }
+}
 
 function startPolling() {
   if (!pollTimer) pollTimer = setInterval(poll, 700);
@@ -1309,6 +2372,7 @@ function poll() {
   api('/api/job').then(job => {
     if (job.state === 'running') {
       if (!jobRunning) setBusy(true, job.kind);
+      jobbar(job);
       if (job.kind === 'run') renderProgress($('runProg'), $('runStatus'), job);
       else if (job.kind === 'files') renderProgress($('filesProg'), $('filesStatus'), job);
       else if (job.kind === 'tasks' && job.tasks) renderTaskProgress(job);
@@ -1357,6 +2421,7 @@ function restoreJob(job) {
     $('dedupBase').value = (p.base || []).join('\n');
     $('dedupNoDb').checked = !!p.no_db;
   }
+  refreshSteps(); dedupSteps();
   if (job.state === 'running') { setBusy(true, job.kind); startPolling(); }
   else poll();    // a finished task: its result
 }
@@ -1426,6 +2491,7 @@ function upSay(cls, msg) {
   const s = $('up-status');
   s.className = 'ustatus ' + cls;
   s.textContent = msg;
+  if (upBusy || upRestarting) jobbar({kind: 'upgrade', detail: msg});
 }
 function upButtons() {
   const off = upBusy || upRestarting || !alive;
@@ -1433,6 +2499,7 @@ function upButtons() {
   $('up-rollback').disabled = off || !$('up-rollback').dataset.ok;
   ['up-file', 'up-dir'].forEach(id => { $(id).disabled = off; });
   ['up-drop', 'up-dir-label'].forEach(id => { $(id).setAttribute('aria-disabled', off ? 'true' : 'false'); });
+  $('up-close').disabled = upBusy || upRestarting;
 }
 function upList(box, title, items, total, empty) {
   box.appendChild(upEl('h3', {}, title));
@@ -1540,7 +2607,7 @@ function upWatch() {
   clearTimeout(upTimer);
   upTimer = setTimeout(() => {
     api('/api/upgrade').then(st => {
-      if (upRestarting) {
+      if (upRestarting || (st.state === 'idle' && upVersion && st.current && st.current !== upVersion)) {
         if (st.state === 'idle') { upSay('ok', L.up.reconnected); location.reload(); return; }
       } else if (st.state === 'waiting' || st.state === 'running') {
         upSay('info', st.stage);
@@ -1557,27 +2624,26 @@ function upWatch() {
       if (upRestarting) upSay('info', L.up.waitNew);
       upWatch();
     });
-  }, 600);
+  }, 250);
 }
 // 页面另有需要提醒的事（如开着的对话会清空）时，定义 upPageWarn() 返回一句话
 function upExtraWarn() { return typeof upPageWarn === 'function' ? upPageWarn() : ''; }
-$('up-go').addEventListener('click', () => {
+$('up-go').addEventListener('click', async () => {
   if (!upCheck || upBusy) return;
   const extras = upCheck.extras_total, page = upExtraWarn();
-  if ((upCheck.warning || extras || page) && !confirm((upCheck.warning ? upCheck.warning + '\n' : '') +
-      (extras ? L.up.extrasQ(extras) + '\n' : '') +
-      (page ? page + '\n' : '') + L.up.goQ(upCheck.confirm))) return;
+  if ((upCheck.warning || extras || page) && !await ask((upCheck.warning ? upCheck.warning + '\n' : '') +
+      (extras ? L.up.extrasQ(extras) + '\n' : '') + (page ? page + '\n' : ''), upCheck.confirm, L.up.goQ(upCheck.confirm))) return;
   upBusy = true; upButtons();
   upSay('info', L.up.starting);
   api('/api/upgrade/apply', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id: upCheck.id})})
     .then(() => { $('up-go').hidden = true; upWatch(); })
     .catch(err => { upBusy = false; upButtons(); upSay('bad', L.up.failed(upWhy(err))); });
 });
-$('up-rollback').addEventListener('click', () => {
+$('up-rollback').addEventListener('click', async () => {
   const rb = $('up-rollback');
   if (upBusy || !rb.dataset.ok) return;
   const page = upExtraWarn();
-  if (!confirm(L.up.rbQ(rb.dataset.cur, rb.dataset.prev) + (page ? '\n' + page : '') + '\n' + L.up.rbGo)) return;
+  if (!await ask(L.up.rbQ(rb.dataset.cur, rb.dataset.prev) + (page ? '\n' + page : ''), L.up.rollback, L.up.rbGo)) return;
   upBusy = true; upButtons();
   $('up-report').textContent = ''; $('up-go').hidden = true;
   upSay('info', L.up.rbStarting);
@@ -1585,30 +2651,50 @@ $('up-rollback').addEventListener('click', () => {
     .then(upWatch)
     .catch(err => { upBusy = false; upButtons(); upSay('bad', L.up.rbFailed(upWhy(err))); });
 });
-$('up-open').addEventListener('click', () => {
-  const box = $('upgrade');
-  const open = box.classList.toggle('open');
-  $('up-open').setAttribute('aria-expanded', open ? 'true' : 'false');
-  if (open) { upStatus().catch(err => upSay('bad', L.up.infoFailed(upWhy(err)))); box.scrollIntoView({block: 'nearest'}); }
-});
+function openUpgrade(focusRollback) {
+  $('up-open').setAttribute('aria-expanded', 'true'); openDialog('upgrade');
+  upStatus().then(() => { if (focusRollback && !$('up-rollback').disabled) $('up-rollback').focus(); })
+    .catch(err => upSay('bad', L.up.infoFailed(upWhy(err))));
+}
+$('up-open').addEventListener('click', () => openUpgrade(false));
+$('up-open-rollback').addEventListener('click', () => openUpgrade(true));
+$('upgrade').addEventListener('close', () => $('up-open').setAttribute('aria-expanded', 'false'));
+$('upgrade').addEventListener('cancel', e => { if (upBusy || upRestarting) e.preventDefault(); });
 function upTexts() {
   $('up-open').textContent = L.up.open; $('upgrade-title').textContent = L.up.title; $('up-hint').textContent = L.up.hint;
   $('up-drop-strong').textContent = L.up.dropStrong; $('up-drop-rest').textContent = L.up.dropRest;
   $('up-dir-text').textContent = L.up.dir; $('up-rollback').textContent = L.up.rollback;
 }
 
-$('quit').addEventListener('click', () => {
-  if (jobRunning && !confirm(t('quit_running'))) return;
+$('quit').addEventListener('click', async () => {
+  if (jobRunning && !await ask(t('quit_running'), t('ask_quit'))) return;
   post('/api/quit').then(r => serviceGone(r.waiting ? t('closed_wait') : t('closed'))).catch(() => serviceGone());
 });
 
+// ---------- language switch
+function setLang(lang, rerender) {
+  L = S[lang] || S.en;
+  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+  document.querySelectorAll('#lang button').forEach(b => { const on = b.dataset.lang === (S[lang] ? lang : 'en'); b.setAttribute('aria-checked', String(on)); b.tabIndex = on ? 0 : -1; });
+  if (!rerender) return;
+  applyTexts(); upTexts(); syncOptions(); renderChosen(); if (tasks.length) renderTasks(); else updateTaskNote(); refreshSteps(); dedupSteps();
+  if (status) $('version').textContent = status.version ? t('version', status.version) : '';
+  if (scan) updateTicked();
+}
+$('lang').addEventListener('click', e => {
+  const b = e.target.closest('button[data-lang]'); if (!b) return;
+  try { localStorage.setItem('doc2kb-lang', b.dataset.lang); } catch (err) { /* this page only */ }
+  setLang(b.dataset.lang, true);
+});
+$('help-open').addEventListener('click', () => openDialog('dlg-help'));
 // ---------- start
 applyTexts();
 upTexts();
 api('/api/status').then(s => {
   status = s;
-  L = S[s.lang] || S.en;
-  document.documentElement.lang = s.lang === 'zh' ? 'zh-CN' : 'en';
+  let lang = s.lang;
+  try { lang = localStorage.getItem('doc2kb-lang') || lang; } catch (e) { /* no storage */ }
+  setLang(lang, false);
   applyTexts();
   upTexts();
   $('version').textContent = s.version ? t('version', s.version) : '';
@@ -1616,7 +2702,9 @@ api('/api/status').then(s => {
   syncOptions();
   renderChosen();
   ping();
+  refreshSteps(); dedupSteps();
   if (s.job && s.job.kind) restoreJob(s.job);
+  else { try { const tab = sessionStorage.getItem('doc2kb-tab'); if (tab && $(tab)) selectTab($(tab), false); } catch (e) { /* no storage */ } }
 }).catch(e => say('error', t('load_failed', e.message), 'bad'));
 </script>
 </body>

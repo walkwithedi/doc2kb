@@ -29,7 +29,7 @@ jobs:
       - name: shellcheck
         run: shellcheck -S warning doc2kb.sh .githooks/* .claude/hooks/session-start.sh
   web:
-    # The browser page's Upgrade and Roll back with Playwright and Chromium.
+    # The browser page (layout and flows, Upgrade and Roll back) with Playwright and Chromium.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -44,7 +44,9 @@ jobs:
           npm install --no-save --no-package-lock playwright@1.49.1
           npx playwright install --with-deps chromium
       - name: Page tests
-        run: node tests/upgrade.test.js
+        run: |
+          node tests/ui.test.js
+          node tests/upgrade.test.js
   tool-upgrade:
     # tool_upgrade.py must be the master copy (walkwithedi/edi-lab, .github/upgrade/tool_upgrade.py) at the
     # version in TOOL_UPGRADE_VERSION. The master repository is private: the job reads it with the

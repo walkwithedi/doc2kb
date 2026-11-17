@@ -2,6 +2,16 @@
 
 Releases follow VERSION; merging a version change to main publishes v<version> (.github/workflows/release.yml).
 
+## 2.6.0
+
+- The browser page is redesigned; the endpoints, the token, the heartbeat and the upgrade flow are unchanged. A title bar with a 中 / EN switch (the service's language stays the default), light and dark themes, Help, a "⋯" menu holding Upgrade and Roll back, and Quit. A task bar under the title shows what runs, the current document, N of M and Cancel.
+- Folder batch in three steps (source, files, output); steps 2 and 3 open after the scan and the headings no longer carry "1. 2. 3." numbers. A summary on the right shows source, ticked files, output and mode, with the start button "Convert N documents". The output mode is two option cards (merge into one md, one md per document); "Files per batch" notes that 0 means no batches. The result card adds converted, duplicate and failed counts and the character count.
+- Incremental tasks are cards with a status dot: green when the task has run, grey when it has not, yellow when its source folder is missing.
+- Duplicate clean-up shows three stages (dry run, check the report, clean up) and states the backup name `<file>.bak-<date>-<time>`; clean-up still needs a dry run that found duplicates.
+- Confirmations open in the page instead of the browser's confirm box. Every text exists in both languages; a missing one is reported in the browser console. Switching tabs keeps each tab's state.
+- After an upgrade or a roll-back the page also reloads when the service is back on another version, so a restart quicker than the page's check no longer leaves the page waiting.
+- `tests/ui.test.js` (Playwright, development only) covers the steps, the run summary, a conversion, the tab state, the task cards, the clean-up gate, both languages, the themes and the 360 px and 1366×768 layouts; `tests/upgrade.test.js` opens Upgrade from the menu and confirms in the page.
+
 ## 2.5.0
 
 - Visio drawings: `.vsdx`, `.vsdm`, the stencils `.vssx`, `.vssm` and the templates `.vstx`, `.vstm` are converted. One section per page in the drawing's page order (background pages marked); one line per shape with its text (group children included, field values kept, the master's text when the shape has none); labelled shape data as `label: value` without hidden rows; connections whose two ends have text as `A → B (connector text)`; pictures exported like slide pictures. A stencil without pages is read master by master. The document time and authors come from the core properties. SPEC 3.4b.
