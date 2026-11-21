@@ -3,7 +3,7 @@
 **Point it at a folder of office documents and get back Markdown an AI assistant can actually search:** one merged file with an index, or one file per document.
 
 - **Zero dependencies.** Python 3.7+ standard library only: no pandoc, LibreOffice, python-docx, openpyxl or python-pptx. Copy it to an offline machine and it runs.
-- **Keeps what matters.** Headings, tables, embedded workbooks and the position of every picture survive the conversion.
+- **Keeps what matters.** Headings, tables, the position of every picture and the attachments (embedded objects, mail and PDF attachments) survive the conversion.
 - **Files things once.** Identical copies, including ones inside zip and tar archives, are parsed once. Moved or renamed folders don't produce duplicates.
 - **Set it and forget it.** An incremental mode for cron converts only what changed since the last run.
 - **Several ways to use it.** Run it in the browser (double-click the launcher), from the command line, or import `doc2kb_core.py` as a library.
@@ -29,7 +29,7 @@ Supports `.docx` `.xlsx` `.xlsm` `.pptx` `.pdf` `.eml`, the legacy `.doc` `.xls`
 
 - Python 3.7 or newer, standard library only.
 - Optional, each feature is skipped with a message when missing:
-  - `pdftotext`, `pdfimages`, `pdfinfo` (poppler-utils): PDF
+  - `pdftotext`, `pdfimages`, `pdfinfo` (poppler-utils): PDF; `pdfdetach`: files attached to a PDF
   - a web browser: the browser interface only
   - `montage` (ImageMagick): contact sheets only
 - Run `doc2kb.sh` with bash, not sh.
@@ -52,6 +52,8 @@ Double-click `文档转知识库.desktop`, or run `./doc2kb.sh` without argument
 - **Duplicate clean-up**, in three stages shown at the top: dry run (read only), check the report, clean up. "Clean up" becomes available only after a dry run that found duplicates; the original is backed up first as `<file>.bak-<date>-<time>`.
 
 `.msg` and `.vsd` files are listed and skipped.
+
+"Read attachments" (on by default) converts the attachments inside documents: objects embedded in docx, pptx, xlsx, doc and ppt files, mail attachments (zip archives and attached mails included) and files attached to a PDF (needs `pdfdetach` from poppler-utils). Each document lists its attachments with what became of each. An attachment of up to 20000 characters (set beside the option) is written into the text where it sits; a longer one becomes its own file, `attachments/<document>-<n>-<attachment>.md` (`附件/` in Chinese; in merged mode below `attachments/<merged name>/`), linked from the text. The same attachment is written out in full once per run; other places point to it. Attachments inside attachments are converted up to 3 levels deep; pictures in attachments are counted, not exported. Unticked, attachments are only listed.
 
 Large folders are converted in batches ("Files per batch", default 1000; 0 = one batch), so tens of thousands of documents run at a steady pace. In merged mode each batch becomes a volume, `<name>-01.md`, `<name>-02.md`, …, with `<name>-index.md` naming the volume of each document; duplicates are found across all batches. A cancelled merged run keeps its finished batches: start it again with the same folders and options and it continues with the first unfinished batch (or choose "Start again from the first batch"). Reloading the page shows the running or latest task again with its settings, progress and result.
 
@@ -82,7 +84,8 @@ Options (each long option has a one-letter short form; type the short ones):
 | `-d N` | documents changed in the last N days (window) |
 | `-t DATE` | from `YYYY-MM-DD` or `"YYYY-MM-DD HH:MM"` |
 | `-i` / `-I` | export / do not export pictures (default: text only, faster) |
-| `-E` | do not expand embedded workbooks |
+| `-E` | do not convert attachments; only list them |
+| `-a N` | an attachment longer than N characters becomes its own file (default 20000) |
 | `-x SUFFIX` | output name suffix (default `incremental`, `增量` in Chinese) |
 | `-b N` | files per batch (default 1000; 0 = one batch); more files are written as volumes `…-01.md`, `…-02.md` with an index of all volumes |
 | `-n` | only list what would be processed (dry run) |
@@ -97,6 +100,7 @@ python3 doc2kb_core.py --batch SOURCE -o OUTPUT --merge   # a folder, merged int
 python3 doc2kb_core.py --batch SOURCE -o OUTPUT --merge --batch-size 500   # volumes of 500 files
 python3 doc2kb_core.py --files list.txt -o OUTPUT          # the files named in a list
 python3 doc2kb_core.py report.docx -o OUTPUT --lang zh     # one file, Chinese labels
+python3 doc2kb_core.py mail.eml -o OUTPUT --attach-max-chars 5000   # attachments over 5000 characters in their own file
 python3 doc2kb_core.py -h                                  # every option
 ```
 
@@ -146,6 +150,7 @@ On the command line: `python3 doc2kb_web.py --upgrade doc2kb-vX.Y.Z.zip` or `./d
 - `.msg` and the legacy binary Visio `.vsd` do not crash a run: they are listed under "need a new format first" (save `.vsd` as `.vsdx` in Visio).
 - Archives: `.zip`, `.tar`, `.tar.gz`/`.tgz`, `.tar.bz2`/`.tbz2`, `.tar.xz`/`.txz` are read like folders. The documents inside appear as `pack.zip/a/report.docx` in the scan, the index and the report, and work with `--only` and incremental tasks; an archive can also be named directly (`python3 doc2kb_core.py pack.zip`). Archives inside archives are opened up to 3 levels deep. Members are unpacked into a private temporary folder that is removed when the run ends; nothing is written next to the archive and member paths never leave it. Encrypted members, members over 512 MB unpacked, more than 2 GB of documents in one archive, damaged archives and `.7z`/`.rar` (no standard-library reader) are listed as failed with the reason. Zip names written by Chinese Windows without the UTF-8 flag are decoded as GBK.
 - Duplicates, within one run: files with identical bytes (SHA-256, archive members included) are parsed once, preferring a copy whose output exists, then one outside any archive, then the first path; files whose extracted text is identical are then kept once (newest document time). Both kinds are listed in the report's "Duplicate files" section and in a note at the top of the kept copy. `-D` keeps every copy. Across runs, incremental tasks skip text already filed (see above).
+- Attachments: objects embedded in docx, pptx, xlsx, doc and ppt files (workbooks, documents, legacy Office files, OLE packages), mail attachments and files attached to a PDF are converted by their real type (from the content, not the extension). Each document lists them in a table (name, size, type, result). Text up to the limit (`--attach-max-chars`, default 20000) goes into the document; longer text goes to its own file under `attachments/`, linked. The same content is written out in full once per run, decided after duplicate documents were removed; the other places point to it. Nesting stops after 3 levels and at 100 MB; what cannot be read gets a note in place and its reason in the list. `--no-inline` (`-E`) only lists them.
 - Merged output (index plus every text in one Markdown file) by default; one file per document as an option.
 - Incremental mode keeps the time of the last successful run as its watermark; every successful run moves it. A file counts as changed by the latest of its file system modification time, change time and the document's own time, so old files newly copied in are found.
 

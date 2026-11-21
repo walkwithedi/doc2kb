@@ -228,6 +228,21 @@ class WebTest(unittest.TestCase):
             self.assertEqual(st, 400, size)
             self.assertIn("per batch", r["error"])
 
+    def test_attachment_length(self):
+        out = os.path.join(self.tmp, "out")
+        body = {"mode": "files", "out": out, "merge": False, "inline": True, "attach_max_chars": 10,
+                "files": [os.path.join(self.src, "report-en.docx")]}
+        for bad in (-1, "10", 1.5, True, 10000001):
+            st, r = self.srv.request("POST", "/api/check", body=dict(body, attach_max_chars=bad))
+            self.assertEqual(st, 400, bad)
+            self.assertIn("attachment length", r["error"])
+        st, _ = self.srv.request("POST", "/api/run", body=body)
+        self.assertEqual(st, 200)
+        job = self.srv.wait_job()
+        self.assertEqual((job["state"], job["rc"]), ("done", 0), job["output"])
+        self.assertEqual(job["params"]["attach_max_chars"], 10)
+        self.assertTrue(os.listdir(os.path.join(out, "attachments")))
+
     def test_run_refusals(self):
         st, d = self.srv.request("POST", "/api/run", body={"src": self.src, "only": []})
         self.assertEqual(st, 400)

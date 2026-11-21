@@ -40,7 +40,10 @@
 # Other options:
 #   -i                export pictures (default: text only, faster)
 #   -I                do not export pictures (the default; to say it explicitly)
-#   -E                do not expand embedded workbooks into the text
+#   -E                do not convert attachments (embedded objects, mail and PDF
+#                     attachments); they are only listed
+#   -a N              an attachment whose text is longer than N characters goes to its own
+#                     file in OUTPUT/attachments/, default 20000
 #   -x SUFFIX         output name suffix, default "incremental" ("增量" in Chinese)
 #   -b N              files per batch, default 1000 (0 = one batch); more files than that are
 #                     written as volumes NAME-01.md, NAME-02.md, ... with NAME-index.md, and an
@@ -58,7 +61,7 @@
 # which keeps cron runs fast and small.
 #
 # Every short option has a long form (--days / --since / --images / --no-images /
-# --no-inline / --name-suffix / --batch-size / --dry-run). Input methods and web pages often turn -- into
+# --no-inline / --attach-max-chars / --name-suffix / --batch-size / --dry-run). Input methods and web pages often turn -- into
 # a dash (— or –); the script turns those back into --, but short options avoid the problem.
 #
 # Exit codes: 0 done (also when nothing was new)  1 option or environment error
@@ -119,7 +122,8 @@ doc2kb.sh — 文档转知识库
 其他选项:
   -i                导出图片（默认不导，只要文字，速度快）
   -I                不导出图片（默认行为）
-  -E                不把嵌入的 Excel 展开进正文
+  -E                不解析附件（文档内嵌对象、邮件附件、PDF 内附件），只登记清单
+  -a N              附件解析后超过 N 字时单独成文件，放在 输出目录/附件/，默认 20000
   -x 后缀           输出文件名后缀，默认「增量」
   -b N              每批文档数，默认 1000（0 表示不分批）；超过时写成分卷 名称-01.md、
                     名称-02.md……，另附 名称-索引.md；中途中断后当天再次运行，从第一个未完成的批接着做
@@ -127,7 +131,7 @@ doc2kb.sh — 文档转知识库
   -h                显示帮助
 
   每个短选项都有长选项（--days / --since / --images / --no-images / --no-inline /
-  --name-suffix / --batch-size / --dry-run），但中文输入法容易把 -- 转成破折号，手工敲命令建议用短选项；
+  --attach-max-chars / --name-suffix / --batch-size / --dry-run），但中文输入法容易把 -- 转成破折号，手工敲命令建议用短选项；
   脚本也会把破折号（— –）还原成 --。
 
 退出码: 0 正常（含无新增）  1 参数或环境错误  2 处理失败  3 首次运行未指定时间范围
@@ -195,6 +199,7 @@ DAYS=""
 SINCE=""
 NOIMG="--no-images"   # cron runs want text only: faster
 NOINLINE=""
+ATT_MAX=20000
 SUFFIX="$(t "incremental" "增量")"
 BATCH_SIZE=1000
 DRYRUN=0
@@ -232,6 +237,7 @@ while [ $# -gt 0 ]; do
         -I|--no-images)      NOIMG="--no-images"; shift ;;
         -i|--images)         NOIMG=""; shift ;;
         -E|--no-inline)      NOINLINE="--no-inline"; shift ;;
+        -a|--attach-max-chars) ATT_MAX="$2"; shift 2 ;;
         -x|--name-suffix)    SUFFIX="$2"; shift 2 ;;
         -b|--batch-size)     BATCH_SIZE="$2"; shift 2 ;;
         -n|--dry-run)        DRYRUN=1; shift ;;
@@ -251,6 +257,9 @@ if [ -n "$DAYS" ] && ! echo "$DAYS" | grep -qE '^[0-9]+$'; then
 fi
 if ! echo "$BATCH_SIZE" | grep -qE '^[0-9]{1,7}$'; then
     echo "$(t "-b/--batch-size must be a whole number" "-b/--batch-size 应为非负整数"): $BATCH_SIZE" >&2; exit 1
+fi
+if ! echo "$ATT_MAX" | grep -qE '^[0-9]{1,8}$'; then
+    echo "$(t "-a/--attach-max-chars must be a whole number" "-a/--attach-max-chars 应为非负整数"): $ATT_MAX" >&2; exit 1
 fi
 if [ -n "$DAYS" ] && [ -n "$SINCE" ]; then
     t "-d/--days and -t/--since cannot be used together" "-d/--days 与 -t/--since 不能同时使用" >&2; echo >&2; exit 1
@@ -436,7 +445,7 @@ RUN_LOG="$OUT/.doc2kb_watch_run.$$"
 if [ "${DOC2KB_PROGRESS:-}" = "1" ]; then
     python3 "$CORE" --batch "$SRC" -o "$OUT" \
         --time-basis newest --since "$SINCE" --only "$ONLY_LIST" --lang "$UI_LANG" \
-        --merge --merge-name "$NAME" --fp-db "$FP_DB" --batch-size "$BATCH_SIZE" $NOIMG $NOINLINE 2>&1 \
+        --merge --merge-name "$NAME" --fp-db "$FP_DB" --batch-size "$BATCH_SIZE" --attach-max-chars "$ATT_MAX" $NOIMG $NOINLINE 2>&1 \
         | tee "$RUN_LOG" | while IFS= read -r line; do
               case "$line" in '['[0-9]*|BATCH$'\t'*) printf '%s\n' "$line" ;; esac
           done
@@ -445,7 +454,7 @@ if [ "${DOC2KB_PROGRESS:-}" = "1" ]; then
 else
     RUN_OUT=$(python3 "$CORE" --batch "$SRC" -o "$OUT" \
         --time-basis newest --since "$SINCE" --only "$ONLY_LIST" --lang "$UI_LANG" \
-        --merge --merge-name "$NAME" --fp-db "$FP_DB" --batch-size "$BATCH_SIZE" $NOIMG $NOINLINE 2>&1)
+        --merge --merge-name "$NAME" --fp-db "$FP_DB" --batch-size "$BATCH_SIZE" --attach-max-chars "$ATT_MAX" $NOIMG $NOINLINE 2>&1)
     RC=$?
 fi
 

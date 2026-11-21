@@ -140,6 +140,8 @@ output. Also drop trailing columns that are empty in every row.
 Cap the rows per sheet (a few thousand); truncate beyond it and say so in the text.
 **Empty rows do not count toward the cap**, or leading blanks would push real data out.
 
+Objects embedded in a worksheet are attachments (3.5).
+
 ### 3.4 Presentations
 
 - Text and pictures of every slide.
@@ -147,6 +149,7 @@ Cap the rows per sheet (a few thousand); truncate beyond it and say so in the te
 - **Detect one special case**: a slide whose chart is drawn with shapes (vector) has no bitmap to export.
   Warn "this slide may hold a chart drawn with shapes; take a screenshot", so the user does not assume the
   content is complete.
+- Objects embedded in a slide are attachments (3.5).
 
 ### 3.4a Legacy binary Office files
 
@@ -168,6 +171,7 @@ standard library and take the text; the output has the same shape as for the cur
   damaged structures are listed as failed with the reason; the rest of the batch goes on.
 - **Metadata**: the summary information property set gives the author, the last saved by and the last saved
   time (section 5.4).
+- **Embedded objects** of Word documents and presentations are attachments (3.5).
 
 ### 3.4b Visio drawings
 
@@ -188,30 +192,72 @@ packages of XML like the current Office formats.
 - **Stencils** without pages are read master by master.
 - **Metadata**: the core properties, as for the current Office formats (sections 5.4 and 5.6).
 
-### 3.5 Expanding embedded attachments
+### 3.5 Converting attachments
 
-Word processing documents often embed spreadsheets or sub-documents. These attachments frequently carry
-the substance (detail tables, definitions) while the body is only a frame; without them the knowledge base
-is badly incomplete.
+Documents carry attachments: objects embedded in Word, spreadsheet and presentation files, files
+attached to a mail, files attached to a PDF. They often hold the substance (detail tables,
+definitions, the formal document) while the body is only a frame; without them the knowledge base is
+badly incomplete. Every attachment is converted with the same parsers as a file of its own and listed.
 
-1. Recognise embedded objects and their real type (magic number again, not the extension).
-2. An embedded **spreadsheet** becomes Markdown tables inline at that position.
-3. An embedded **sub-document** is parsed recursively for text and tables and inlined. Its headings are
-   demoted (to bold text, say) so they do not disturb the main outline. Its pictures are not extracted,
-   but their number is stated.
-4. An embedded **legacy binary format** or unknown container cannot be opened: insert a clear warning at
-   that position and list it as a "hard gap", asking the user to save it by hand and convert it separately.
+**Where attachments come from**:
 
-### 3.6 De-duplicating embedded attachments (essential, or the output explodes)
+| Carrier | Attachments | Where the text goes |
+| --- | --- | --- |
+| docx | OLE objects of the body | after the text, in order |
+| pptx | OLE objects of each slide | after that slide |
+| xlsx | OLE objects of each worksheet | after that sheet's table |
+| doc | the storages under `ObjectPool` | in the attachment section at the end |
+| ppt | the object storages of the document's object list (zlib-compressed or not) | after the slide that refers to them; others after the last slide |
+| PDF | files attached to the document (`pdfdetach`; without it a gap note) | in the attachment section at the end |
+| mail | attachments, an attached mail as one attachment | in the attachment section, after the list |
+| zip attachment | its documents, one level down | inside the zip's own block |
 
-The same attachment can be referenced in several sections of one document, and each reference stores
-its own copy in the package; expanding every copy repeats the same text many times.
+**Real type** by content, not the extension: a zip package is a docx, pptx, xlsx or Visio drawing by its
+parts, any other zip is an archive; an OLE container is a legacy Word, Excel or PowerPoint file by its
+main stream, or an OLE package (the file inside is unwrapped and its type found again), or a container
+holding a current-format file or a PDF; `%PDF` is a PDF; `.eml` is a mail. Formats the tool does not read
+are listed with the reason; `.msg` and `.vsd` are listed as needing a new format first.
 
-- Hash each attachment's **content**; expand the same content in full only once.
-- At later occurrences leave one line ("this attachment has the same content as the one above; not
-  expanded again") instead of dropping it silently: the reader needs to know a reference is there.
-- **Comparing raw bytes is not enough**: the same attachment repackaged has different bytes (time stamps
-  and other metadata) but the same content. Hash the parsed text, or both bytes and text.
+**Placement by length**: an attachment whose converted text is at most `--attach-max-chars` characters
+(default 20000) is inlined, between a rule and a bold "Inline attachment" caption; its headings become
+bold lines so they do not disturb the main outline, and its pictures are not extracted but counted. A
+longer one goes to a Markdown file of its own, `attachments/<document>-<n>-<attachment>.md` (`附件/` in
+Chinese; merged runs use the subfolder `attachments/<merged name>/`, so incremental files written into one
+folder do not overwrite each other's), headed by the source document and the attachment name, and the
+text gets a line with a link to it.
+
+**Nesting**: attachments inside attachments are converted the same way, at most 3 levels deep (mail → zip
+→ docx → its embedded workbook is the limit); deeper ones, attachments over 100 MB and attachments that
+cannot be read get a gap note at their position (a "hard gap", see 5.5) and a reason in the list.
+
+**The list**: every document with attachments ends with (or, for mail, PDF and doc, has) an attachment
+section: a note on how attachments were handled, then a table of number, name, size, type and result
+(inlined, own file with a link, same as an earlier attachment, not opened with the reason, nested too
+deep, not read). An attachment in its own file is listed too.
+
+**Switch**: "convert attachments" (`--no-inline` turns it off, the page has the option) is on by default.
+Off, attachments are only listed with the result "not read"; mail keeps its note that the attachments
+were not read and how to get them.
+
+### 3.6 Counting attachments once
+
+The same attachment is often referenced in several places of one document (each reference stores its own
+copy in the package) and recurs in mails across forwards and replies; expanding every copy repeats the
+same text many times.
+
+- The key is the **converted text** (whitespace normalised, the heading taken from the attachment's name
+  left out), not the bytes: the same attachment repackaged has different bytes but the same content.
+- **Within a document** a later copy becomes one line ("this attachment has the same content as X above;
+  not expanded again") instead of being dropped silently: the reader needs to know a reference is there.
+- **Across a run**: after duplicate documents were removed (3.8), the kept documents are taken in
+  processing order and an attachment already converted in full in an earlier document becomes a pointer
+  to that document (and to its own file, if it has one); the later copy's own file is removed. Doing this
+  after removing duplicate documents means a kept document never points to one that was dropped.
+- Converted attachments are wrapped in HTML comments carrying their key; the content fingerprints (3.8,
+  6.3) count an attachment by its key, so the same document counts the same whether its attachment is
+  inlined, in its own file or a pointer.
+- Runs are compared only by the fingerprints of whole documents; an attachment converted in an earlier
+  run is converted again.
 
 ### 3.7 Mail
 
@@ -225,17 +271,14 @@ only a rich-text part, reduce it to plain text (drop scripts and styles, block t
 decode entities). Decode by the part's declared charset and tolerate **wrong declarations**: mail often
 declares one encoding and uses another, so try candidate encodings in turn.
 
-**Attachments**: **not read**; a list below the body records them. Requirements:
+**Attachments**: converted as in 3.5 and counted once per run as in 3.6. The attachment section below
+the body holds the list (number, name, size, type, result), then the converted attachments; no section
+when there are no attachments. An attached mail (`message/rfc822`) is one attachment, converted as a
+mail, not merged into the body. With attachments switched off the list stays, with a note that they were
+not read and how to get their content (save the attachment from the mail and convert that file).
 
-- a table with number, attachment name, size and type
-- three types: can be converted separately, legacy binary format that needs converting first (`.msg`, `.vsd`), unsupported
-- a note before the list saying the attachments were not read and how to get their content (save the
-  attachment from the mail and convert that file)
-- no section when there are no attachments
-
-> Why: attachments recur across forwards and replies; inlining them all duplicates heavily, and their
-> importance varies widely, so the user converts the ones that matter. The list tells readers (including
-> the AI) that an attachment exists and what it is called, so nobody assumes the mail is complete.
+> Why the list stays: it tells readers (including the AI) that an attachment exists, what it is called and
+> what became of it, so nobody assumes the mail is complete.
 
 **Pictures**: inline pictures and picture attachments are exported like any picture, with anchors. Mail
 pictures are nearly always orphan pictures (no describing text) and are marked as such.
@@ -301,7 +344,8 @@ Step 1 removes that cost for plain copies, which are the common case.
 
 PDF is a **lossy intermediate format**; warn the user clearly:
 
-- embedded attachments are gone (converting to PDF drops them)
+- objects embedded in the original are gone (converting to PDF drops them); files attached to the PDF
+  itself are converted (3.5)
 - vector graphics cannot be extracted
 - heading levels are gone
 
@@ -407,7 +451,7 @@ as identical bytes.
   - a batch with files removed, unticked or changed is done again with the files left, keeping its place
     and volume number; a batch with no file left is dropped;
   - files in no earlier batch form new batches after the last one;
-  - other options (language, embedded workbooks, pictures, duplicates, contact sheets) than the unfinished
+  - other options (language, attachments and their length, pictures, duplicates, contact sheets) than the unfinished
     run's start again from the first batch, and `--force` always does;
   - the report says how many batches and files were kept.
 - **One file per document**: the files are written as before; batches only set when the report is written
@@ -421,6 +465,9 @@ as identical bytes.
   original path
 - incremental: `<source folder>_YYYYMMDD_<suffix>.md`; a second run on the same day adds the time, as in
   `<source folder>_YYYYMMDD-HHMM_<suffix>.md`
+- long attachments (3.5): `attachments/<document>-<n>-<attachment>.md` (`附件/` in Chinese); in merged and
+  incremental runs `attachments/<merged file name>/…`. A document removed as a duplicate takes its
+  attachment files with it.
 
 Labels inside the output (headings, notes, table headers) follow the chosen language (English or Chinese).
 
@@ -515,7 +562,8 @@ arguments start it. Four tabs:
 The walk skips hidden folders, lock files (the office suite's temporary files) and the tool's own output
 folders (or it nests into itself).
 
-Options at least: merge, expand embedded attachments, export pictures, contact sheets, keep every copy.
+Options at least: merge, convert attachments (with the length above which an attachment gets its own
+file), export pictures, contact sheets, keep every copy.
 
 **One failing file never stops a batch.** Record the reason in the report and continue. Failure types to
 handle: damaged, encrypted, wrong format, parse error.
@@ -547,7 +595,8 @@ shrank.
   (folders and options; a folder batch is scanned again to list the files), its progress and cancel
   button while it runs, and its result once it ended.
 - **Defaults**: output folder `<source>/_doc2kb` (`_知识库` in Chinese; for chosen files the folder of the
-  first file), merge on, embedded workbooks expanded, **pictures not exported**, duplicates kept once.
+  first file), merge on, attachments converted (own file above 20000 characters), **pictures not
+exported**, duplicates kept once.
 - **Only this run counts**: a report older than the run is never shown as its result; a program that
   fails shows its exit code and output.
 - **Files that cannot be processed do not stop the rest**: unsupported legacy formats are listed and left out; PDF
@@ -756,11 +805,20 @@ missing, what to install, or which alternative to use) instead of failing halfwa
    from both reference mechanisms
 2. Embedded spreadsheets are expanded inline, every sheet present
 3. Embedded sub-documents are expanded recursively with demoted headings
-4. An attachment referenced several times is expanded once, with a pointer at the other positions
+3a. Attachments in every carrier are converted: a legacy workbook and an OLE package in a docx, objects in
+    pptx, xlsx, doc and ppt (after their slide), files attached to a PDF, mail attachments including a zip
+    and an attached mail (not merged into the body); `.msg` is listed as needing a new format; a fourth
+    level of nesting gets a gap note; every attachment appears in the list
+3b. An attachment longer than the limit is in its own file under `attachments/` (merged: under
+    `attachments/<name>/`), linked from the text and the list; a short one stays in the text
+4. An attachment referenced several times is expanded once, with a pointer at the other positions; across
+   a run (two mails with the same attachment, also in a merged run of several volumes) it is converted in
+   full once and the copy's own file is not kept; when one of two documents with the same text is dropped,
+   the kept one holds the attachment in full; with attachments switched off they are only listed
 5. A spreadsheet with thousands of empty rows: no empty rows and no trailing empty columns in the output
 6. Presentations: text and pictures of every slide; slides drawn with shapes are warned about
-6a. Mail: MIME-encoded subject decoded; rich-text-only body reduced to plain text; attachments listed, not
-    read, with correct types, no section without attachments; signature icons dropped, real diagrams kept;
+6a. Mail: MIME-encoded subject decoded; rich-text-only body reduced to plain text; attachments listed and
+    converted, no section without attachments; signature icons dropped, real diagrams kept;
     damaged or empty mail does not crash
 6b. Duplicates: copies with the same content but different bytes are found (anchor paths and file-name
     headings normalised); the newest is kept; the same text with a different number of pictures is **not**
@@ -836,7 +894,7 @@ missing, what to install, or which alternative to use) instead of failing halfwa
 | --- | --- |
 | orphan picture | a picture no surrounding text describes; its information exists only in the picture |
 | watermark | the time of the last successful run, kept by incremental mode |
-| inline | expand an embedded attachment as text at its position |
+| inline | convert an attachment and put its text into the document at its position |
 | anchor | the text marker of a picture's position |
 | hard gap | content known to be unreadable automatically; needs a manual step |
 | encoded word | non-ASCII text in a mail header encoded with Base64 or similar |
