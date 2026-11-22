@@ -10,7 +10,8 @@ Design constraints:
 
 Output (one file mode):
   <outdir>/
-      <document>.md          the converted document, embedded workbooks inlined
+      <document>.md          the converted document, its attachments inlined and listed
+      attachments/           attachments too long to inline, one md each (附件/ in Chinese)
       images/                exported pictures
       _image-list.md         every picture with its section and whether text describes it
       _batch-report.txt      processing log and warnings
@@ -44,7 +45,9 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import urllib.parse
 import zipfile
+import zlib
 from xml.etree import ElementTree as ET
 
 
@@ -78,12 +81,6 @@ LABELS = {
     'column_n': ('Column %d', '列%d'),
     # docx
     'docx_styles_failed': ('styles.xml could not be parsed: %s', 'styles.xml 解析失败: %s'),
-    'emb_docx_open_failed': ('embedded docx cannot be opened (%s): %s', '嵌入 docx 无法打开 (%s): %s'),
-    'emb_no_document': ('embedded object %s has no document.xml', '嵌入对象 %s 不含 document.xml'),
-    'emb_docx_failed': ('embedded docx could not be parsed (%s): %s', '嵌入 docx 解析失败 (%s): %s'),
-    'emb_docx_images': ('\n> (This embedded document holds %d images; they were not extracted. '
-                        'Open the attachment separately if you need them.)\n',
-                        '\n> （此嵌入文档含 %d 张图片，未提取。如有需要请单独打开该附件。）\n'),
     'docx_invalid': ('not a valid docx (no document.xml)', '不是有效的 docx（缺 document.xml）'),
     'docx_style_map': ('heading style mapping: %d entries', '标题样式映射: %d 条'),
     'docx_no_styles': ('no heading style recognised; the output has no heading levels',
@@ -100,24 +97,52 @@ LABELS = {
     'emb_same': ('\n> ℹ The attachment embedded here (%s) has exactly the same content as "%s" above; '
                  'it is not expanded again, see above.\n',
                  '\n> ℹ 此处嵌入的附件（%s）与前文「%s」内容完全相同，不再重复展开，请参见上文。\n'),
-    'emb_same_word': ('\n> ℹ The attachment embedded here (%s) has exactly the same content as "%s" above; '
-                      'it is not expanded again.\n',
-                      '\n> ℹ 此处嵌入的附件（%s）与前文「%s」内容完全相同，不再重复展开。\n'),
-    'emb_dup_bytes': ('skipped duplicate attachment %s (same as %s)', '跳过重复附件 %s（与 %s 相同）'),
     'emb_dup_text': ('skipped duplicate attachment %s (same content as %s)', '跳过重复附件 %s（与 %s 内容相同）'),
     'legacy_kind': ('legacy Office format or OLE container', '老版 Office 格式或 OLE 容器'),
-    'emb_legacy_warn': ('embedded object %s is a %s and cannot be opened with the standard library. '
-                        'Open it in an office application, save it as xlsx/docx and process that file separately.',
-                        '嵌入对象 %s 是%s，纯标准库无法解开。请在 WPS 里双击该对象，另存为 xlsx/docx 后单独处理。'),
-    'emb_gap': ('\n> ⚠ An attachment is embedded here (%s, %s); it could not be opened automatically, '
+    'emb_gap': ('\n> ⚠ An attachment is here (%s, %s); it could not be opened automatically, '
                 'get its content separately.\n',
-                '\n> ⚠ 此处嵌入了一个附件（%s，%s），未能自动解开，需单独获取内容。\n'),
-    'emb_unknown': ('embedded object %s has an unknown type; skipped', '嵌入对象 %s 类型无法识别，已跳过'),
+                '\n> ⚠ 此处有一个附件（%s，%s），未能自动解开，需单独获取内容。\n'),
     'inline_word': ('\n---\n\n**Inline attachment (Word): %s**\n', '\n---\n\n**内联附件（Word）：%s**\n'),
-    'inlined_word': ('inlined Word attachment %s (%d characters)', '已内联 Word 附件 %s（%d 字符）'),
-    'sheet_caption': ('\n*Sheet: %s* (%d rows)\n', '\n*工作表：%s*（%d 行）\n'),
     'inline_book': ('\n---\n\n**Inline attachment: %s**\n', '\n---\n\n**内联附件：%s**\n'),
-    'inlined_book': ('inlined %s (%d sheets, %d characters)', '已内联 %s（%d 个 sheet，%d 字符）'),
+    # attachments (embedded objects, mail and PDF attachments)
+    'att_noname': ('(no name)', '（无名称）'),
+    'att_dir': ('attachments', '附件'),
+    'att_object': ('embedded object %s', '嵌入对象 %s'),
+    'att_inner': ('%s (holds %s)', '%s（内含 %s）'),
+    'att_images': ('\n> (This attachment holds %d images; they were not extracted. '
+                   'Open the attachment separately if you need them.)\n',
+                   '\n> （此附件含 %d 张图片，未提取。如有需要请单独打开该附件。）\n'),
+    'att_note_on': ('> The attachments are converted: short ones in this text, long ones in their own file '
+                    '(linked); the same content is expanded only once.',
+                    '> 附件已解析：内容较短的直接展开在本文中，较长的单独成文件（见链接）；内容相同的只展开一次。'),
+    'att_note_off': ('> Attachments were not read in this run; they are only listed here.',
+                     '> 本次未解析附件，以下仅登记附件清单。'),
+    'att_table_head': ('| No. | Attachment | Size | Type | Result |', '| 序号 | 附件名 | 大小 | 类型 | 处理结果 |'),
+    'att_r_inline': ('inline', '已展开'),
+    'att_r_file': ('own file: [%s](%s)', '单独文件：[%s](%s)'),
+    'att_r_same': ('same as attachment "%s" above', '同前文附件「%s」'),
+    'att_r_same_doc': ('same as in %s, attachment "%s"', '同《%s》中的附件「%s」'),
+    'att_r_failed': ('not opened: %s', '未能解开：%s'),
+    'att_r_depth': ('nested more than %d levels', '嵌套超过 %d 层，未展开'),
+    'att_r_big': ('larger than %s', '超过 %s，未展开'),
+    'att_r_empty': ('no text', '无文字内容'),
+    'att_r_off': ('not read', '未解析'),
+    'att_file_line': ('\n> 📎 Attachment %s (%d characters) is in its own file: [%s](%s)\n',
+                      '\n> 📎 附件 %s（%d 字符）内容较长，已单独成文件：[%s](%s)\n'),
+    'att_file_header': ('> Attachment of %s: %s\n\n', '> %s 中的附件：%s\n\n'),
+    'att_same_line': ('> ℹ The attachment here (%s) has exactly the same content as %s; it is not expanded again.',
+                      '> ℹ 此处的附件（%s）与%s内容完全相同，不再重复展开。'),
+    'att_same_doc': ('the one in %s (attachment "%s")', '《%s》中的附件「%s」'),
+    'att_same_doc_file': ('the one in %s (attachment "%s", [own file](%s))', '《%s》中的附件「%s」（[单独文件](%s)）'),
+    'att_inline_log': ('inlined attachment %s (%d characters)', '已展开附件 %s（%d 字符）'),
+    'att_file_log': ('attachment %s (%d characters) written to %s', '附件 %s（%d 字符）已单独成文件 %s'),
+    'att_failed_warn': ('attachment %s could not be opened: %s', '附件 %s 未能解开：%s'),
+    'att_depth_warn': ('attachment %s is nested more than %d levels; not opened', '附件 %s 嵌套超过 %d 层，未展开'),
+    'att_write_failed': ('cannot write attachment file %s: %s', '写入附件文件失败 %s: %s'),
+    'att_no_pdfdetach': ('the PDF has attached files, but pdfdetach (poppler-utils) is missing; they were not read',
+                         'PDF 内有附件，但缺少 pdfdetach（poppler-utils），未解析'),
+    'att_no_pdfdetach_short': ('pdfdetach is missing', '缺少 pdfdetach'),
+    'att_pdf_files': ('files attached to the PDF', 'PDF 内附件'),
     # pptx
     'pptx_no_slides': ('no slides found', '未找到任何幻灯片'),
     'pptx_count': ('%d slides', '共 %d 页幻灯片'),
@@ -189,12 +214,10 @@ LABELS = {
     'mail_img_section': ('Mail pictures', '邮件图片'),
     'mail_img_heading': ('## Mail pictures\n', '## 邮件图片\n'),
     'mail_att_heading': ('## Attachments\n', '## 附件\n'),
-    'mail_att_note1': ('> This tool does not read mail attachments; they are only listed here.',
-                       '> 本工具不解析邮件附件，以下仅登记附件清单作为占位。'),
+    'mail_att_note1': ('> Attachments were not read in this run; they are only listed here.',
+                       '> 本次未解析邮件附件，以下仅登记附件清单作为占位。'),
     'mail_att_note2': ('> To get an attachment\'s content, save it from the mail and convert that file separately.\n',
                        '> 如需附件内容，请从邮件中另存附件后，用本工具单独处理该文件。\n'),
-    'mail_att_head': ('| No. | Attachment | Size | Type |', '| 序号 | 附件名 | 大小 | 类型 |'),
-    'att_supported': ('can be converted separately', '本工具可单独处理'),
     'att_legacy': ('legacy binary format, save in a new format first', '旧版二进制格式，需先另存为新格式'),
     'att_unsupported': ('unsupported type', '不支持的类型'),
     'mail_log': ('mail: subject "%s", %d attachments, %d images', '邮件: 主题「%s」，附件 %d 个，图片 %d 张'),
@@ -1062,63 +1085,21 @@ def looks_described(before_text, after_text):
     return False
 
 
-def parse_docx_embedded(raw, report, source_name=''):
-    """Parse a docx embedded in the main document (a field description, say).
-    Text and tables only; no pictures and no nested objects. Returns Markdown, '' on failure."""
-    try:
-        zf = zipfile.ZipFile(io.BytesIO(raw))
-    except Exception as e:
-        report.warn(T('emb_docx_open_failed', source_name, e))
-        return ''
-
-    md = []
-    with zf:
-        if 'word/document.xml' not in zf.namelist():
-            report.warn(T('emb_no_document', source_name))
-            return ''
-        style_map = load_style_map(zf, report)
-        try:
-            doc = ET.fromstring(zf.read('word/document.xml'))
-        except Exception as e:
-            report.warn(T('emb_docx_failed', source_name, e))
-            return ''
-        body = doc.find(q('w', 'body'))
-        if body is None:
-            return ''
-
-        n_imgs = 0
-        for el in block_children(body):
-            if el.tag == q('w', 'p'):
-                text = para_text(el).strip()
-                lv = para_heading_level(el, style_map)
-                n_imgs += len(para_images(el))
-                if lv and text:
-                    # headings of an embedded document become bold text, keeping the main outline clean
-                    md.append('\n**%s**\n' % text)
-                elif text:
-                    md.append(text + '\n')
-            elif el.tag == q('w', 'tbl'):
-                rows = table_to_rows(el)
-                if rows:
-                    md.append('\n' + rows_to_markdown(rows))
-
-        if n_imgs:
-            md.append(T('emb_docx_images', n_imgs))
-
-    return '\n'.join(md)
-
-
 def image_location(img_ref, fname, save_images):
     return T('image_at', img_ref, fname) if save_images else T('image_not_saved')
 
 
 def parse_docx(path, outdir, report, inline_excel=True,
-               imgdir=None, img_ref='images', save_images=True):
+               imgdir=None, img_ref='images', save_images=True, att=None):
     """Parse a docx; returns (Markdown, image manifest).
 
     imgdir  : where pictures are written, default outdir/images
     img_ref : path prefix used in the anchors in the text
+    att     : AttachCtx for the embedded objects (see convert())
     """
+    if att is None:
+        att = AttachCtx(outdir, safe_name(os.path.splitext(os.path.basename(path))[0]),
+                        report, enabled=inline_excel)
     md = []
     img_manifest = []
 
@@ -1231,87 +1212,19 @@ def parse_docx(path, outdir, report, inline_excel=True,
                 if rows:
                     md.append('\n' + rows_to_markdown(rows))
 
-        # --- inline embedded objects (workbooks, Word attachments) ---
-        if inline_excel and embedded:
+        # --- embedded objects (workbooks, documents, packages), after the text ---
+        if embedded:
             report.log(T('emb_found', len(embedded)))
-            seen_hash = {}   # content hash -> name of the first attachment with it
+            al = AttachList(att)
+            blocks = []
             for rid, target, idx in embedded:
                 src = resolve_part('word', target)
                 if src not in names:
                     report.warn(T('emb_missing', rid, target))
                     continue
-
-                raw = zf.read(src)
-                base_t = os.path.basename(target)
-                low = base_t.lower()
-
-                # the same attachment referenced in several places is expanded once
-                h = hashlib.md5(raw).hexdigest()
-                if h in seen_hash:
-                    md.append(T('emb_same', base_t, seen_hash[h]))
-                    report.log(T('emb_dup_bytes', base_t, seen_hash[h]))
-                    continue
-                seen_hash[h] = base_t
-
-                # real type: magic number first, then the extension
-                is_zip = raw[:2] == b'PK'
-                is_cfb = raw[:8] == b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1'
-
-                if is_cfb or (not is_zip and (low.endswith('.bin')
-                                              or low.endswith('.xls')
-                                              or low.endswith('.doc'))):
-                    kind = T('legacy_kind')
-                    report.warn(T('emb_legacy_warn', base_t, kind))
-                    md.append(T('emb_gap', base_t, kind))
-                    continue
-
-                if not is_zip:
-                    report.warn(T('emb_unknown', base_t))
-                    continue
-
-                # --- a zip package: a workbook or a Word document ---
-                try:
-                    inner_names = zipfile.ZipFile(io.BytesIO(raw)).namelist()
-                except Exception:
-                    inner_names = []
-
-                if any(n.startswith('word/') for n in inner_names):
-                    sub_md = parse_docx_embedded(raw, report, source_name=base_t)
-                    if sub_md.strip():
-                        h2 = hashlib.md5(sub_md.encode('utf-8')).hexdigest()
-                        if h2 in seen_hash:
-                            md.append(T('emb_same_word', base_t, seen_hash[h2]))
-                            report.log(T('emb_dup_text', base_t, seen_hash[h2]))
-                            continue
-                        seen_hash[h2] = base_t
-                        md.append(T('inline_word', base_t))
-                        md.append(sub_md)
-                        md.append('\n---\n')
-                        report.log(T('inlined_word', base_t, len(sub_md)))
-                    continue
-
-                # otherwise a workbook
-                sheets = parse_xlsx(raw, report, source_name=base_t)
-                if not sheets:
-                    continue
-
-                block = []
-                for sname, rows in sheets.items():
-                    block.append(T('sheet_caption', sname, len(rows)))
-                    block.append(rows_to_markdown(rows))
-                content_text = '\n'.join(block)
-
-                h2 = hashlib.md5(content_text.encode('utf-8')).hexdigest()
-                if h2 in seen_hash:
-                    md.append(T('emb_same', base_t, seen_hash[h2]))
-                    report.log(T('emb_dup_text', base_t, seen_hash[h2]))
-                    continue
-                seen_hash[h2] = base_t
-
-                md.append(T('inline_book', base_t))
-                md.append(content_text)
-                md.append('\n---\n')
-                report.log(T('inlined_book', base_t, len(sheets), len(content_text)))
+                blocks.append(al.expand(os.path.basename(target), zf.read(src)))
+            md.extend(b for b in blocks if b)
+            md.append(al.section())
 
     return '\n'.join(md), img_manifest
 
@@ -1319,8 +1232,11 @@ def parse_docx(path, outdir, report, inline_excel=True,
 # ================================================================ PPTX
 
 def parse_pptx(path, outdir, report, imgdir=None, img_ref='images',
-               save_images=True):
-    """Parse a pptx: the text and the pictures of every slide."""
+               save_images=True, att=None):
+    """Parse a pptx: the text and the pictures of every slide; embedded objects after the slide."""
+    if att is None:
+        att = AttachCtx(outdir, safe_name(os.path.splitext(os.path.basename(path))[0]), report)
+    al = AttachList(att)
     md = []
     img_manifest = []
     if imgdir is None:
@@ -1394,6 +1310,13 @@ def parse_pptx(path, outdir, report, imgdir=None, img_ref='images',
                     'ctx_after': ' '.join(texts)[:80],
                 })
 
+            # embedded objects (workbooks, documents, packages)
+            for obj in root.iter(q('p', 'oleObj')):
+                target = rid2target.get(obj.get('{%s}id' % NS['r']), '')
+                src = resolve_part('ppt/slides', target) if target else ''
+                if src in names:
+                    md.append(al.expand(os.path.basename(src), zf.read(src)))
+
             # shapes but no bitmap on the slide: probably a chart drawn with shapes
             total_chars = len(''.join(texts))
             has_shapes = any(True for _ in root.iter(q('p', 'sp')))
@@ -1403,6 +1326,7 @@ def parse_pptx(path, outdir, report, imgdir=None, img_ref='images',
         if shape_only_pages:
             report.warn(T('pptx_shapes', T('list_sep').join(str(x) for x in shape_only_pages)))
 
+    md.append(al.section())
     return '\n'.join(md), img_manifest
 
 
@@ -1618,17 +1542,55 @@ def parse_vsdx(path, outdir, report, imgdir=None, img_ref='images', save_images=
 
 # ================================================================ XLSX file
 
+def _xlsx_embeddings(path):
+    """Objects embedded in the worksheets of an xlsx: {sheet name: [(file name, bytes)]}."""
+    out = {}
+    try:
+        with zipfile.ZipFile(path) as zf:
+            names = set(zf.namelist())
+            wb = ET.fromstring(zf.read('xl/workbook.xml'))
+            rels = {r.get('Id'): r.get('Target')
+                    for r in ET.fromstring(zf.read('xl/_rels/workbook.xml.rels'))}
+            for sh in wb.iter(q('s', 'sheet')):
+                target = rels.get(sh.get('{%s}id' % NS['r']), '')
+                if not target:
+                    continue
+                part = resolve_part('xl', target)
+                relp = posixpath.join(posixpath.dirname(part), '_rels',
+                                      posixpath.basename(part) + '.rels')
+                if relp not in names:
+                    continue
+                for r in ET.fromstring(zf.read(relp)):
+                    rtype = r.get('Type') or ''
+                    if not rtype.endswith(('/oleObject', '/package')):
+                        continue
+                    src = resolve_part(posixpath.dirname(part), r.get('Target') or '')
+                    if src in names:
+                        out.setdefault(sh.get('name'), []).append(
+                            (posixpath.basename(src), zf.read(src)))
+    except (KeyError, zipfile.BadZipFile, ET.ParseError):
+        pass  # no embedded objects found; the sheets are read on their own
+    return out
+
+
 def parse_xlsx_file(path, outdir, report, imgdir=None, img_ref='images',
-                    save_images=True, display_name=None):
+                    save_images=True, display_name=None, att=None):
     sheets = parse_xlsx(path, report, source_name=os.path.basename(path))
     if not sheets:
         return '', []
+    if att is None:
+        att = AttachCtx(outdir, safe_name(os.path.splitext(os.path.basename(path))[0]), report)
+    al = AttachList(att)
+    embedded = _xlsx_embeddings(path)
     md = ['# ' + (display_name or
                   os.path.splitext(os.path.basename(path))[0]) + '\n']
     for sname, rows in sheets.items():
         md.append(T('sheet_heading', sname))
         md.append(T('sheet_rows', len(rows)))
         md.append(rows_to_markdown(rows))
+        for fname, raw in embedded.get(sname, []):
+            md.append(al.expand(fname, raw))
+    md.append(al.section())
     report.log(T('xlsx_count', len(sheets)))
     return '\n'.join(md), []
 
@@ -1909,15 +1871,18 @@ BIFF_ERRORS = {0x00: '#NULL!', 0x07: '#DIV/0!', 0x0F: '#VALUE!', 0x17: '#REF!', 
 
 
 def parse_xls(data, report, source_name='', max_rows=2000):
-    """Parse a legacy xls (BIFF8, Excel 97 and later) from bytes or a path; returns
+    """Parse a legacy xls (BIFF8, Excel 97 and later) from bytes, a path or an opened OLE file; returns
     {sheet name: [[cell, ...], ...]} like parse_xlsx. Raises ValueError when it cannot be read."""
-    if not isinstance(data, bytes):
-        with open(data, 'rb') as f:
-            data = f.read()
-    try:
-        ole = OleFile(data)
-    except (ValueError, struct.error) as e:
-        raise ValueError(T('legacy_bad', 'xls', e))
+    if isinstance(data, (OleFile, _SubOle)):
+        ole = data
+    else:
+        if not isinstance(data, bytes):
+            with open(data, 'rb') as f:
+                data = f.read()
+        try:
+            ole = OleFile(data)
+        except (ValueError, struct.error) as e:
+            raise ValueError(T('legacy_bad', 'xls', e))
     if ole.exists('Workbook'):
         wb = ole.stream('Workbook')
     elif ole.exists('Book'):
@@ -2036,21 +2001,26 @@ def parse_xls(data, report, source_name='', max_rows=2000):
     return result
 
 
-def parse_xls_file(path, outdir, report, imgdir=None, img_ref='images',
-                   save_images=True, display_name=None):
+def xls_markdown(data, report, name, display_name=None):
+    """A legacy workbook (bytes, path or opened OLE file) as Markdown."""
     try:
-        sheets = parse_xls(path, report, source_name=os.path.basename(path))
+        sheets = parse_xls(data, report, source_name=name)
     except (struct.error, IndexError) as e:
         raise ValueError(T('legacy_bad', 'xls', e))
     if not sheets:
-        return '', []
-    md = ['# ' + (display_name or os.path.splitext(os.path.basename(path))[0]) + '\n']
+        return ''
+    md = ['# ' + (display_name or os.path.splitext(name)[0]) + '\n']
     for sname, rows in sheets.items():
         md.append(T('sheet_heading', sname))
         md.append(T('sheet_rows', len(rows)))
         md.append(rows_to_markdown(rows))
     report.log(T('xls_count', len(sheets)))
-    return '\n'.join(md), []
+    return '\n'.join(md)
+
+
+def parse_xls_file(path, outdir, report, imgdir=None, img_ref='images',
+                   save_images=True, display_name=None):
+    return xls_markdown(path, report, os.path.basename(path), display_name), []
 
 
 # ---------------------------------------------------------------- DOC (Word 97 and later)
@@ -2262,10 +2232,11 @@ def doc_blocks(paras):
     return blocks
 
 
-def parse_doc(path, outdir, report, imgdir=None, img_ref='images', save_images=True, **_):
-    """Parse a legacy Word document (Word 97 and later): paragraphs and tables, no pictures."""
+def doc_markdown(ole, report, att=None):
+    """A legacy Word document (opened OLE file) as Markdown: paragraphs, tables and, at the end,
+    the objects embedded in it (the ObjectPool storages; their position is not kept)."""
     try:
-        blocks = doc_blocks(doc_paragraphs(_read_ole(path, 'doc')))
+        blocks = doc_blocks(doc_paragraphs(ole))
     except (struct.error, IndexError) as e:
         raise ValueError(T('legacy_bad', 'doc', e))
     md, tables = [], 0
@@ -2276,13 +2247,31 @@ def parse_doc(path, outdir, report, imgdir=None, img_ref='images', save_images=T
         else:
             md.append(b + '\n')
     report.log(T('doc_log', len(blocks) - tables, tables))
-    return '\n'.join(md), []
+    if att is not None:
+        pool = ole_storages(ole, 'ObjectPool')
+        if pool:
+            report.log(T('emb_found', len(pool)))
+            al = AttachList(att)
+            blocks = [al.expand(T('att_object', n), ole=sub, size=sub.size()) for n, sub in pool]
+            md.append(al.section())
+            md.extend(x for x in blocks if x)
+    return '\n'.join(md)
+
+
+def parse_doc(path, outdir, report, imgdir=None, img_ref='images', save_images=True, att=None, **_):
+    """Parse a legacy Word document (Word 97 and later): paragraphs and tables, no pictures."""
+    if att is None:
+        att = AttachCtx(outdir, safe_name(os.path.splitext(os.path.basename(path))[0]), report)
+    return doc_markdown(_read_ole(path, 'doc'), report, att), []
 
 
 # ---------------------------------------------------------------- PPT (PowerPoint 97 and later)
 
 PPT_TEXT_CHARS, PPT_TEXT_BYTES = 0x0FA0, 0x0FA8
 PPT_SLIDE, PPT_SLWT, PPT_SLIDE_PERSIST, PPT_OUTLINE_REF = 0x03EE, 0x0FF0, 0x03F3, 0x0F9E
+# embedded objects: reference on a slide, list in the document, OLE embed atom, object storage
+PPT_EXOBJ_REF, PPT_EXOBJ_LIST, PPT_EXOLE_EMBED, PPT_EXOLE_ATOM, PPT_EXOLE_STG = \
+    0x0BC1, 0x0409, 0x0FCC, 0x0FC3, 0x1011
 
 
 def _ppt_records(data, start, end):
@@ -2302,17 +2291,20 @@ def _ppt_text(data, rt, a, b):
     return text.replace('\x0b', '\n').replace('\r', '\n')
 
 
-def _ppt_slide_items(data, a, b, out, depth=0):
-    """Text atoms and outline text references inside a slide container, in order."""
+def _ppt_slide_items(data, a, b, out, depth=0, objs=None):
+    """Text atoms and outline text references inside a slide container, in order; the ids of
+    the embedded objects on the slide go to objs."""
     if depth > 30:
         return
     for rt, _, s, e, cont in _ppt_records(data, a, b):
         if cont:
-            _ppt_slide_items(data, s, e, out, depth + 1)
+            _ppt_slide_items(data, s, e, out, depth + 1, objs)
         elif rt in (PPT_TEXT_CHARS, PPT_TEXT_BYTES):
             out.append(_ppt_text(data, rt, s, e))
         elif rt == PPT_OUTLINE_REF and e - s >= 4:
             out.append(struct.unpack_from('<i', data, s)[0])
+        elif rt == PPT_EXOBJ_REF and e - s >= 4 and objs is not None:
+            objs.append(struct.unpack_from('<I', data, s)[0])
 
 
 def _ppt_persist(data, cur):
@@ -2339,8 +2331,9 @@ def _ppt_persist(data, cur):
     return persist, doc_ref
 
 
-def ppt_slides(ole):
-    """The text of every slide in order: [[text, ...], ...]."""
+def ppt_slides(ole, objs_out=None):
+    """The text of every slide in order: [[text, ...], ...]. objs_out, a list, gets the ids of
+    the embedded objects of each slide ([[id, ...], ...])."""
     try:
         data = ole.stream('PowerPoint Document')
     except KeyError:
@@ -2354,23 +2347,26 @@ def ppt_slides(ole):
         token, cur = None, None
     if token == 0xF3D1C4DF:
         raise ValueError(T('legacy_encrypted'))
-    slides = None
+    slides, objs = None, []
     if cur is not None:
         try:
-            slides = _ppt_slides_by_persist(data, cur)
+            slides = _ppt_slides_by_persist(data, cur, objs)
         except (ValueError, struct.error, KeyError):
-            slides = None
+            slides, objs = None, []
     if slides is None:      # no usable edit chain: slide containers in stream order
         slides = []
         for rt, _, s, e, cont in _ppt_records(data, 0, len(data)):
             if rt == PPT_SLIDE and cont:
-                items = []
-                _ppt_slide_items(data, s, e, items)
+                items, ids = [], []
+                _ppt_slide_items(data, s, e, items, objs=ids)
                 slides.append([x for x in items if isinstance(x, str)])
+                objs.append(ids)
+    if objs_out is not None:
+        objs_out.extend(objs)
     return [[t.strip() for t in s if t.strip()] for s in slides]
 
 
-def _ppt_slides_by_persist(data, cur):
+def _ppt_slides_by_persist(data, cur, objs=None):
     persist, doc_ref = _ppt_persist(data, cur)
     doc = persist[doc_ref]
     _, rt, size = struct.unpack_from('<HHI', data, doc)
@@ -2390,13 +2386,15 @@ def _ppt_slides_by_persist(data, cur):
                 outline[ref].append(_ppt_text(data, art, a, b))
     slides = []
     for ref in order:
-        texts, used = [], set()
+        texts, used, ids = [], set(), []
+        if objs is not None:
+            objs.append(ids)
         off = persist.get(ref)
         if off is not None and off + 8 <= len(data):
             _, rt, size = struct.unpack_from('<HHI', data, off)
             if rt == PPT_SLIDE:
                 items = []
-                _ppt_slide_items(data, off + 8, off + 8 + size, items)
+                _ppt_slide_items(data, off + 8, off + 8 + size, items, objs=ids)
                 for x in items:
                     if isinstance(x, int):
                         if 0 <= x < len(outline[ref]) and x not in used:
@@ -2409,16 +2407,64 @@ def _ppt_slides_by_persist(data, cur):
     return slides
 
 
-def parse_ppt(path, outdir, report, imgdir=None, img_ref='images', save_images=True, **_):
-    """Parse a legacy PowerPoint file (PowerPoint 97 and later): the text of every slide."""
+def ppt_objects(ole):
+    """The embedded objects of a legacy PowerPoint file: {object id: OLE storage bytes}, in the
+    order of the document's object list. The storage records may be zlib-compressed."""
+    data = ole.stream('PowerPoint Document')
     try:
-        slides = ppt_slides(_read_ole(path, 'ppt'))
+        cu = ole.stream('Current User')
+        cur = struct.unpack_from('<I', cu, 16)[0]
+        persist, doc_ref = _ppt_persist(data, cur)
+        doc = persist[doc_ref]
+        _, rt, size = struct.unpack_from('<HHI', data, doc)
+    except (KeyError, ValueError, struct.error):
+        return {}
+    out = {}
+    for rt, _, s, e, cont in _ppt_records(data, doc + 8, doc + 8 + size):
+        if rt != PPT_EXOBJ_LIST or not cont:
+            continue
+        for ert, _, es, ee, econt in _ppt_records(data, s, e):
+            if ert != PPT_EXOLE_EMBED or not econt:
+                continue
+            for art, _, a_, b_, _c in _ppt_records(data, es, ee):
+                if art != PPT_EXOLE_ATOM or b_ - a_ < 20:
+                    continue
+                obj_id, _sub, pref = struct.unpack_from('<III', data, a_ + 8)
+                off = persist.get(pref)
+                if off is None or off + 8 > len(data):
+                    continue
+                vi, srt, ssize = struct.unpack_from('<HHI', data, off)
+                if srt != PPT_EXOLE_STG:
+                    continue
+                body = data[off + 8:off + 8 + ssize]
+                if vi >> 4 == 1 and len(body) > 4:      # compressed: size, then zlib data
+                    try:
+                        body = zlib.decompress(body[4:])
+                    except zlib.error:
+                        continue
+                out[obj_id] = body
+    return out
+
+
+def ppt_markdown(ole, report, att=None):
+    """A legacy PowerPoint file (opened OLE file) as Markdown; embedded objects after their slide."""
+    objs = []
+    try:
+        slides = ppt_slides(ole, objs)
     except (struct.error, IndexError) as e:
         raise ValueError(T('legacy_bad', 'ppt', e))
     if not slides:
         report.warn(T('pptx_no_slides'))
-        return '', []
+        return ''
     report.log(T('pptx_count', len(slides)))
+    stores = {}
+    if att is not None:
+        try:
+            stores = ppt_objects(ole)
+        except (struct.error, IndexError, KeyError, ValueError):
+            stores = {}
+    al = AttachList(att) if att is not None else None
+    placed = set()
     md = []
     for n, texts in enumerate(slides, 1):
         md.append(T('slide_heading', n))
@@ -2427,7 +2473,24 @@ def parse_ppt(path, outdir, report, imgdir=None, img_ref='images', save_images=T
             md.extend('- ' + ln for ln in lines)
         else:
             md.append(T('slide_no_text'))
-    return '\n'.join(md), []
+        for oid in (objs[n - 1] if n - 1 < len(objs) else []):
+            if oid in stores and oid not in placed:
+                placed.add(oid)
+                md.append(al.expand(T('att_object', oid), stores[oid]))
+    # objects no slide refers to: after the last slide
+    for oid, raw in stores.items():
+        if oid not in placed:
+            md.append(al.expand(T('att_object', oid), raw))
+    if al is not None:
+        md.append(al.section())
+    return '\n'.join(md)
+
+
+def parse_ppt(path, outdir, report, imgdir=None, img_ref='images', save_images=True, att=None, **_):
+    """Parse a legacy PowerPoint file (PowerPoint 97 and later): the text of every slide."""
+    if att is None:
+        att = AttachCtx(outdir, safe_name(os.path.splitext(os.path.basename(path))[0]), report)
+    return ppt_markdown(_read_ole(path, 'ppt'), report, att), []
 
 
 # ---------------------------------------------------------------- authors
@@ -2498,7 +2561,7 @@ def pdf_pages(path):
 
 
 def parse_pdf(path, outdir, report, imgdir=None, img_ref='images',
-              save_images=True, display_name=None):
+              save_images=True, display_name=None, att=None):
     if not have('pdftotext'):
         report.warn(T('pdf_no_tool'))
         return '', []
@@ -2539,6 +2602,13 @@ def parse_pdf(path, outdir, report, imgdir=None, img_ref='images',
 
     md = '# ' + (display_name or
                  os.path.splitext(os.path.basename(path))[0]) + '\n\n' + txt
+    # files attached to the PDF: the list, then their content
+    if att is None:
+        att = AttachCtx(outdir, safe_name(os.path.splitext(os.path.basename(path))[0]), report)
+    al = AttachList(att)
+    blocks = att_pdf(att, path, al)
+    if al.rows:
+        md = md.rstrip('\n') + '\n' + al.section() + blocks
     return md, img_manifest
 
 
@@ -2674,16 +2744,32 @@ def _image_size(data):
     return 0, 0
 
 
+def _mail_parts(msg, keep_mail):
+    """The leaf parts of a mail. keep_mail: an attached mail (message/rfc822) is one part,
+    not walked into, so it can be converted as an attachment."""
+    if keep_mail and msg.get_content_type() == 'message/rfc822':
+        yield msg
+        return
+    if msg.is_multipart():
+        for sub in msg.get_payload():
+            if hasattr(sub, 'get_content_type'):
+                yield from _mail_parts(sub, keep_mail)
+        return
+    yield msg
+
+
 def parse_eml(path, outdir, report, inline_excel=True,
-              imgdir=None, img_ref='images', save_images=True):
+              imgdir=None, img_ref='images', save_images=True, att=None):
     """Parse an .eml mail:
       - header fields (from, to, cc, date, subject)
       - body (plain text preferred; an HTML-only body becomes plain text)
-      - attachments: listed, not read
+      - attachments: listed; with inline_excel also converted (an attached mail too)
       - inline pictures and picture attachments exported like any picture, with anchors
-    inline_excel has no effect here (attachments are not read); it keeps the interface uniform.
     """
     import email
+    if att is None:
+        att = AttachCtx(outdir, safe_name(os.path.splitext(os.path.basename(path))[0]), report,
+                        enabled=inline_excel)
 
     md = []
     img_manifest = []
@@ -2719,12 +2805,26 @@ def parse_eml(path, outdir, report, inline_excel=True,
     attachments = []          # (file name, bytes)
     images = []               # (file name, bytes)
 
-    for part in msg.walk():
-        if part.get_content_maintype() == 'multipart':
-            continue
+    for part in _mail_parts(msg, att.enabled):
         ctype = part.get_content_type()
         disp = (part.get('Content-Disposition') or '').lower()
         fname = _decode_mime_header(part.get_filename() or '')
+
+        if ctype == 'message/rfc822':
+            inner = part.get_payload()
+            inner = inner[0] if isinstance(inner, list) and inner else inner
+            try:
+                data = inner.as_bytes()
+            except Exception:
+                data = None
+            if data:
+                if not fname:
+                    sub = _decode_mime_header(inner.get('Subject', '')) or T('no_subject')
+                    fname = safe_name(sub, 60) + '.eml'
+                elif not fname.lower().endswith('.eml'):
+                    fname += '.eml'
+                attachments.append((fname, data))
+            continue
 
         if ctype == 'text/plain' and 'attachment' not in disp:
             text_parts.append(_part_text(part))
@@ -2788,24 +2888,15 @@ def parse_eml(path, outdir, report, inline_excel=True,
             md.extend(img_block)
             md.append('')
 
-    # ---------- attachments (listed, not read) ----------
+    # ---------- attachments: the list, then the converted ones ----------
     if attachments:
-        md.append(T('mail_att_heading'))
-        md.append(T('mail_att_note1'))
-        md.append(T('mail_att_note2'))
-        md.append(T('mail_att_head'))
-        md.append('| --- | --- | --- | --- |')
-        for i, (fname, data) in enumerate(attachments, 1):
-            ext = os.path.splitext(fname)[1].lower()
-            if ext in SUPPORTED_EXT:
-                kind = T('att_supported')
-            elif ext in LEGACY_EXT:
-                kind = T('att_legacy')
-            else:
-                kind = T('att_unsupported')
-            safe_fn = fname.replace('|', '\\|').replace('\n', ' ')
-            md.append('| %d | %s | %s | %s |'
-                      % (i, safe_fn, human_size(len(data)), kind))
+        al = AttachList(att)
+        blocks = [al.expand(fname, data, mail=True) for fname, data in attachments]
+        if att.enabled:
+            md.append(al.section())
+        else:
+            md.append(al.section(note=T('mail_att_note1') + '\n' + T('mail_att_note2')))
+        md.extend(b for b in blocks if b)
         md.append('')
 
     report.log(T('mail_log', subject[:40], len(attachments), len(img_manifest)))
@@ -2820,7 +2911,7 @@ def content_fingerprint(md, manifest):
     - whitespace normalised
     - the number of pictures is part of the key, so the same text with other pictures differs
     """
-    body = re.sub(r'\A(?:>[^\n]*\n)+\s*', '', md or '')
+    body = re.sub(r'\A(?:>[^\n]*\n)+\s*', '', att_normalise(md or ''))
     # picture anchors hold each copy's mirrored path: location, not content
     body = IMAGE_REF_RE.sub('见 <图>', body)
     # in one-file-per-document mode the top heading comes from the file name: location too
@@ -2836,7 +2927,7 @@ def text_fingerprint(md):
     replaces the header block and demotes every heading by one level; both are normalised
     here), so both this run's results and older incremental files can be compared.
     """
-    body = (md or '') + '\n'
+    body = att_normalise(md or '') + '\n'
     # the leading metadata block and the "more copies" note differ per output
     body = re.sub(r'\A(?:(?:>[^\n]*)?[ \t]*\n)+', '', body)
     # heading levels change when merged; keep only the heading text
@@ -2895,13 +2986,19 @@ def moved_rows(moved):
 
 
 def _remove_entry_outputs(e, md_dir, img_root):
-    """Delete an entry's md (written already in one-file mode) and its picture folder."""
+    """Delete an entry's md (written already in one-file mode), its attachment files and its
+    picture folder."""
     try:
         p = os.path.join(md_dir, e['stat']['md'])
         if os.path.isfile(p):
             os.remove(p)
     except OSError:
         pass  # already gone or locked; the output stays, which is harmless
+    for rel in e['stat'].get('att_files') or []:
+        try:
+            os.remove(os.path.join(md_dir, *rel.split('/')))
+        except OSError:
+            pass  # already gone; a stray file is harmless
     try:
         ref = (e.get('img_ref') or '').replace('images/', '', 1)
         if ref:
@@ -3672,35 +3769,579 @@ def base_names(items):
 
 # ================================================================ one document
 
-def convert(src, ext, md_dir, report, inline_excel=True, imgdir=None, img_ref='images',
-            save_images=True):
-    """Parse one file by its extension; returns (Markdown, image manifest).
-    Raises zipfile.BadZipFile or other errors from the parsers; process_one() handles them."""
-    if ext == '.docx':
-        return parse_docx(src, md_dir, report, inline_excel=inline_excel,
-                          imgdir=imgdir, img_ref=img_ref, save_images=save_images)
-    if ext == '.pptx':
-        return parse_pptx(src, md_dir, report, imgdir=imgdir, img_ref=img_ref,
-                          save_images=save_images)
-    if ext in ('.xlsx', '.xlsm'):
-        return parse_xlsx_file(src, md_dir, report, imgdir=imgdir, img_ref=img_ref,
-                               save_images=save_images)
+# ================================================================ attachments
+
+ATT_MAX_CHARS = 20000            # longer converted text goes to its own file
+ATT_MAX_DEPTH = 3                # attachments inside attachments, at most this many levels
+ATT_MAX_BYTES = 100 * 1024 * 1024
+# markers around a converted attachment: the run-wide duplicate pass and the fingerprints
+# find them; Markdown viewers hide them
+ATT_BEGIN_RE = re.compile(r'<!-- doc2kb:att id=(\w+) key=([0-9a-f]+) name=(\S*)'
+                          r'(?: file=(\S+))?( ref)? -->\n?')
+ATT_END = '<!-- /doc2kb:att id=%s -->'
+ATT_ROW_RE = re.compile(r'(\| )([^|\n]*?)( <!-- doc2kb:att-row id=(\w+) -->)')
+OOXML_KIND = (('word/', '.docx'), ('ppt/', '.pptx'), ('xl/', '.xlsx'), ('visio/', '.vsdx'))
+
+
+class AttachCtx:
+    """What converting the attachments of one document needs. One per top-level document;
+    child() gives the context for the attachments inside an attachment. The duplicate table,
+    the id counter and the separate files are shared by all levels."""
+
+    def __init__(self, md_dir, doc_base, report, enabled=True, max_chars=ATT_MAX_CHARS,
+                 depth=0, shared=None, doc_name=None, subdir=''):
+        self.md_dir = md_dir
+        self.doc_base = doc_base            # output name stem: separate files start with it
+        self.doc_name = doc_name or doc_base    # source file name, for their header
+        # separate files go to md_dir/attachments[/subdir]; merged runs use their output name,
+        # so incremental files written into one folder do not overwrite each other's
+        self.link_dir = T('att_dir') + ('/' + subdir if subdir else '')
+        self.report = report
+        self.enabled = enabled
+        self.max_chars = ATT_MAX_CHARS if max_chars is None else max(0, int(max_chars))
+        self.depth = depth
+        self.shared = shared if shared is not None else {'seen': {}, 'n': 0, 'files': []}
+
+    def child(self):
+        c = AttachCtx(self.md_dir, self.doc_base, self.report, self.enabled, self.max_chars,
+                      self.depth + 1, self.shared, self.doc_name)
+        c.link_dir = self.link_dir
+        return c
+
+    def next_id(self):
+        self.shared['n'] += 1
+        return 'a%d' % self.shared['n']
+
+
+class AttachList:
+    """The attachments of one converted document: expand() converts one and returns the text
+    that goes where it sits; section() returns the list of all of them."""
+
+    def __init__(self, ctx):
+        self.ctx = ctx
+        self.rows = []      # (name, size, type, result)
+
+    def _row(self, name, size, kind, result, uid=None):
+        if uid:
+            result += ' <!-- doc2kb:att-row id=%s -->' % uid
+        self.rows.append((name, size, kind, result))
+
+    def expand(self, name, raw=None, ole=None, size=None, mail=False):
+        """Convert one attachment (bytes, or an opened OLE storage). mail: attachments of a
+        mail, which have no position; a type the tool does not read gets no gap note."""
+        ctx = self.ctx
+        name = (name or '').strip() or T('att_noname')
+        if size is None:
+            size = len(raw) if raw is not None else 0
+        if not ctx.enabled:
+            self._row(name, size, _att_ext_kind(name), T('att_r_off'))
+            return ''
+        if size > ATT_MAX_BYTES:
+            self._row(name, size, _att_ext_kind(name), T('att_r_big', human_size(ATT_MAX_BYTES)))
+            return T('emb_gap', name, T('att_r_big', human_size(ATT_MAX_BYTES)))
+        if ctx.depth >= ATT_MAX_DEPTH:
+            ctx.report.warn(T('att_depth_warn', name, ATT_MAX_DEPTH))
+            self._row(name, size, _att_ext_kind(name), T('att_r_depth', ATT_MAX_DEPTH))
+            return T('emb_gap', name, T('att_r_depth', ATT_MAX_DEPTH))
+        try:
+            kind, shown, text, n_imgs = _att_convert(ctx, name, raw, ole)
+        except AttachSkip as e:
+            # a type this tool does not read at all: listed, no gap note in mail
+            self._row(name, size, e.kind, T('att_r_failed', e.reason))
+            return '' if mail else T('emb_gap', name, e.reason)
+        except Exception as e:
+            reason = str(e)[:160] or e.__class__.__name__
+            ctx.report.warn(T('att_failed_warn', name, reason))
+            log.debug('attachment %s failed', name, exc_info=True)
+            self._row(name, size, _att_ext_kind(name), T('att_r_failed', reason))
+            return T('emb_gap', name, reason)
+        if shown != name:
+            name = T('att_inner', name, shown)
+        if not text.strip():
+            self._row(name, size, kind, T('att_r_empty'))
+            return ''
+
+        # the top heading comes from the attachment's name: location, not content
+        body = re.sub(r'\A\s*#[ \t]+[^\n]*\n', '', text)
+        key = hashlib.md5(re.sub(r'\s+', ' ', _att_plain(body)).strip()
+                          .encode('utf-8')).hexdigest()
+        uid = ctx.next_id()
+        qname = _att_quote(name)
+        first = ctx.shared['seen'].get(key)
+        if first:
+            # the same content within this document: once only
+            ctx.report.log(T('emb_dup_text', name, first[0]))
+            ptr = T('emb_same', name, first[0])
+            self._row(name, size, kind, T('att_r_same', first[0]), uid)
+            return '\n<!-- doc2kb:att id=%s key=%s name=%s ref -->\n%s\n%s\n' % (
+                uid, key, qname, ptr.strip('\n'), ATT_END % uid)
+
+        note = T('att_images', n_imgs) if n_imgs else ''
+        if len(text) > ctx.max_chars:
+            link = self._write_file(name, kind, text, note)
+            if link:
+                fname = link.rsplit('/', 1)[-1]
+                ctx.shared['seen'][key] = (name, link)
+                self._row(name, size, kind, T('att_r_file', fname, _att_link(link)), uid)
+                ctx.report.log(T('att_file_log', name, len(text), link))
+                return ('\n<!-- doc2kb:att id=%s key=%s name=%s file=%s -->\n%s%s\n'
+                        % (uid, key, qname, _att_quote(link),
+                           T('att_file_line', name, len(text), fname, _att_link(link)),
+                           ATT_END % uid))
+        ctx.shared['seen'][key] = (name, None)
+        self._row(name, size, kind, T('att_r_inline'), uid)
+        ctx.report.log(T('att_inline_log', name, len(text)))
+        head = T('inline_word', name) if kind == 'docx' else T('inline_book', name)
+        return ('\n<!-- doc2kb:att id=%s key=%s name=%s -->\n%s%s\n%s\n\n---\n%s\n'
+                % (uid, key, qname, head, note, _att_demote(body).strip('\n'), ATT_END % uid))
+
+    def _write_file(self, name, kind, text, note):
+        """A long attachment as its own Markdown file in <md_dir>/attachments/; returns its path
+        relative to md_dir, with / as separator."""
+        ctx = self.ctx
+        d = os.path.join(ctx.md_dir, *ctx.link_dir.split('/'))
+        stem = os.path.splitext(name)[0] if '.' in name else name
+        fname = '%s-%d-%s.md' % (safe_name(ctx.doc_base, 40),
+                                 len(ctx.shared['files']) + 1, safe_name(stem, 60))
+        # links to other separate files are relative to md_dir; this file sits next to them
+        body = text.replace('](%s/' % _att_link(ctx.link_dir), '](')
+        try:
+            os.makedirs(d, exist_ok=True)
+            with open(os.path.join(d, fname), 'w', encoding='utf-8', errors='replace') as f:
+                f.write(T('att_file_header', ctx.doc_name, name) + note + body.lstrip('\n'))
+        except OSError as e:
+            ctx.report.warn(T('att_write_failed', fname, e))
+            return None
+        rel = ctx.link_dir + '/' + fname
+        ctx.shared['files'].append(rel)
+        return rel
+
+    def section(self, heading=True, note=None):
+        """The list of attachments, or '' when there is none."""
+        if not self.rows:
+            return ''
+        out = []
+        if heading:
+            out.append('\n' + T('mail_att_heading'))
+        if note is None:
+            note = T('att_note_on') if self.ctx.enabled else T('att_note_off')
+        if note:
+            out.append(note.rstrip('\n') + '\n')
+        out.append(T('att_table_head'))
+        out.append('| --- | --- | --- | --- | --- |')
+        for i, (name, size, kind, result) in enumerate(self.rows, 1):
+            out.append('| %d | %s | %s | %s | %s |' % (
+                i, _att_cell(name), human_size(size) if size else '-', kind or '-', result))
+        out.append('')
+        return '\n'.join(out)
+
+
+class AttachSkip(Exception):
+    """An attachment of a type the tool does not read."""
+
+    def __init__(self, kind, reason):
+        Exception.__init__(self, reason)
+        self.kind, self.reason = kind, reason
+
+
+def _att_cell(s):
+    return (s or '').replace('|', '\\|').replace('\n', ' ')
+
+
+def _att_quote(s):
+    return urllib.parse.quote(s or '', safe='')
+
+
+def _att_unquote(s):
+    return urllib.parse.unquote(s or '')
+
+
+def _att_link(path):
+    """A relative Markdown link target: spaces, brackets and % escaped, other text kept readable."""
+    return re.sub(r'[%\s()<>\[\]]', lambda m: '%%%02X' % ord(m.group(0)), path)
+
+
+def _att_ext_kind(name):
+    ext = os.path.splitext(name or '')[1].lower().lstrip('.')
+    return ext or '-'
+
+
+def _att_plain(text):
+    """Converted text without the markers, for the duplicate key."""
+    text = ATT_BEGIN_RE.sub('', text)
+    text = re.sub(r'<!-- /?doc2kb:att[^>]*-->', '', text)
+    return text
+
+
+def _att_demote(text):
+    """Headings of an inlined attachment become bold lines, keeping the main outline clean;
+    anchors of pictures that were not exported are dropped (a count line says how many)."""
+    out = []
+    skip = both('image_not_saved')
+    for ln in text.split('\n'):
+        if any(s in ln for s in skip):
+            continue
+        m = re.match(r'^#{1,6}[ \t]+(.+?)\s*$', ln)
+        out.append('**%s**' % m.group(1) if m else ln)
+    return re.sub(r'\n{3,}', '\n\n', '\n'.join(out))
+
+
+def _ole10native(data):
+    """(file name, bytes) of an OLE package (the \\x01Ole10Native stream)."""
+    def cstr(pos):
+        end = data.index(b'\0', pos)
+        raw = data[pos:end]
+        for enc in ('utf-8', 'gbk', 'latin-1'):
+            try:
+                return raw.decode(enc), end + 1
+            except UnicodeDecodeError:
+                continue
+        return '', end + 1
+
+    total = struct.unpack_from('<I', data, 0)[0]
+    try:
+        pos = 6                                     # total size, then a 2-byte type
+        label, pos = cstr(pos)
+        _src, pos = cstr(pos)
+        pos += 8                                    # reserved, then the length of the next path
+        _tmp, pos = cstr(pos)
+        n = struct.unpack_from('<I', data, pos)[0]
+        body = data[pos + 4:pos + 4 + n]
+        if len(body) != n:
+            raise ValueError('short package')
+        return label, body
+    except (ValueError, struct.error):
+        # not a file package (an object stored in native form): the bytes after the size
+        return '', data[4:4 + total]
+
+
+class _SubOle:
+    """The streams of one storage inside an OLE file, as an OleFile."""
+
+    def __init__(self, ole, prefix):
+        self.ole, self.prefix = ole, prefix.lower()
+
+    def exists(self, name):
+        return self.ole.exists(self.prefix + name)
+
+    def stream(self, name):
+        return self.ole.stream(self.prefix + name)
+
+    def size(self):
+        return sum(self.ole.entries[i]['size'] for p, i in self.ole.paths.items()
+                   if p.startswith(self.prefix))
+
+
+def ole_storages(ole, top):
+    """The storages directly below top ("ObjectPool"), in name order: [(name, _SubOle)]."""
+    pre = top.lower() + '/'
+    names = sorted({p[len(pre):].split('/')[0] for p in ole.paths
+                    if p.startswith(pre) and '/' in p[len(pre):]})
+    return [(n, _SubOle(ole, pre + n + '/')) for n in names]
+
+
+def _att_convert(ctx, name, raw, ole):
+    """Convert an attachment; returns (type, name shown, Markdown, picture count).
+    Raises AttachSkip for a type the tool does not read, other errors when it cannot be read."""
+    if ole is None and raw is not None and raw[:8] == OLE_MAGIC:
+        try:
+            ole = OleFile(raw)
+        except (ValueError, struct.error) as e:
+            raise ValueError('%s (%s)' % (T('legacy_kind'), e))
+    if ole is not None:
+        return _att_convert_ole(ctx, name, ole)
+
+    ext = os.path.splitext(name)[1].lower()
+    if raw[:2] == b'PK':
+        try:
+            with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                inner = z.namelist()
+        except zipfile.BadZipFile as e:
+            raise ValueError(T('corrupt_note') + ' (%s)' % e)
+        for prefix, kext in OOXML_KIND:
+            if any(n.startswith(prefix) for n in inner):
+                return _att_convert_file(ctx, name, raw, kext)
+        return _att_convert_zip(ctx, name, raw)
+    if raw[:5] == b'%PDF-' or raw[:1024].find(b'%PDF-') >= 0 and ext == '.pdf':
+        return _att_convert_file(ctx, name, raw, '.pdf')
     if ext == '.eml':
-        return parse_eml(src, md_dir, report, inline_excel=inline_excel,
-                         imgdir=imgdir, img_ref=img_ref, save_images=save_images)
+        return _att_convert_file(ctx, name, raw, '.eml')
+    if ext in LEGACY_EXT:
+        raise AttachSkip(ext.lstrip('.'), T('att_legacy'))
+    raise AttachSkip(_att_ext_kind(name), T('att_unsupported'))
+
+
+def _att_convert_ole(ctx, name, ole):
+    if ole.exists('\x01Ole10Native'):
+        label, body = _ole10native(ole.stream('\x01Ole10Native'))
+        return _att_convert(ctx, label or name, body, None)
+    if ole.exists('Package'):
+        return _att_convert(ctx, name, ole.stream('Package'), None)
+    if ole.exists('WordDocument'):
+        return 'doc', name, doc_markdown(ole, ctx.report, att=ctx.child()), 0
+    if ole.exists('Workbook') or ole.exists('Book'):
+        return 'xls', name, xls_markdown(ole, ctx.report, name), 0
+    if ole.exists('PowerPoint Document'):
+        md = ppt_markdown(ole, ctx.report, att=ctx.child())
+        return 'ppt', name, md, 0
+    for s in ('CONTENTS', 'Contents'):
+        if ole.exists(s):
+            data = ole.stream(s)
+            if data[:5] == b'%PDF-':
+                return _att_convert_file(ctx, name, data, '.pdf')
+    raise ValueError(T('legacy_kind'))
+
+
+def _att_convert_file(ctx, name, raw, ext):
+    """Convert attachment bytes with the parser for ext, through a temporary file."""
+    tmp = tempfile.mkdtemp(prefix='doc2kb-att-')
+    try:
+        path = os.path.join(tmp, 'attachment' + ext)
+        with open(path, 'wb') as f:
+            f.write(raw)
+        md, manifest = convert(path, ext, tmp, ctx.report, inline_excel=ctx.enabled,
+                               imgdir=os.path.join(tmp, 'images'), save_images=False,
+                               att=ctx.child(), display_name=os.path.splitext(name)[0])
+        return ext.lstrip('.'), name, md, len(manifest or [])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _att_convert_zip(ctx, name, raw):
+    """A zip attachment: every document in it is an attachment one level down."""
+    sub = AttachList(ctx.child())
+    blocks = []
+    with zipfile.ZipFile(io.BytesIO(raw)) as z:
+        for info in z.infolist():
+            if info.is_dir():
+                continue
+            mname = clean_member_name(_zip_member_name(info))
+            if not mname or _member_hidden(mname):
+                continue
+            if info.flag_bits & 0x1:
+                sub._row(mname, info.file_size, _att_ext_kind(mname), T('att_r_failed', T('arc_encrypted')))
+                continue
+            if info.file_size > ATT_MAX_BYTES:
+                blocks.append(sub.expand(mname, size=info.file_size))
+                continue
+            blocks.append(sub.expand(mname, z.read(info), mail=True))
+    md = '# %s\n\n%s\n%s' % (os.path.splitext(name)[0], ''.join(blocks),
+                             sub.section(note=''))
+    return 'zip', name, md, 0
+
+
+def att_pdf(ctx, path, al):
+    """Files attached to a PDF, through pdfdetach; returns the converted blocks."""
+    try:
+        with open(path, 'rb') as f:
+            has = b'/EmbeddedFile' in f.read()
+    except OSError:
+        has = False
+    if not has:
+        return ''
+    if not ctx.enabled:
+        names = []
+        if have('pdfdetach'):
+            out = subprocess.run(['pdfdetach', '-list', path], capture_output=True)
+            for ln in out.stdout.decode('utf-8', 'replace').splitlines():
+                m = re.match(r'\s*\d+:\s*(.+)$', ln)
+                if m:
+                    names.append(m.group(1).strip())
+        for n in names or [T('att_pdf_files')]:
+            al.expand(n)
+        return ''
+    if not have('pdfdetach'):
+        ctx.report.warn(T('att_no_pdfdetach'))
+        al._row(T('att_pdf_files'), 0, 'pdf', T('att_r_failed', T('att_no_pdfdetach_short')))
+        return T('emb_gap', T('att_pdf_files'), T('att_no_pdfdetach_short'))
+    tmp = tempfile.mkdtemp(prefix='doc2kb-pdfatt-')
+    try:
+        subprocess.run(['pdfdetach', '-saveall', '-o', tmp, path], capture_output=True)
+        blocks = []
+        for fn in sorted(os.listdir(tmp)):
+            fp = os.path.join(tmp, fn)
+            if not os.path.isfile(fp):
+                continue
+            size = os.path.getsize(fp)
+            if size > ATT_MAX_BYTES:
+                blocks.append(al.expand(fn, size=size))
+                continue
+            with open(fp, 'rb') as f:
+                blocks.append(al.expand(fn, f.read()))
+        return ''.join(blocks)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _att_scan(md, fn):
+    """Walk the attachment blocks of a text left to right. fn(match, inner text) returns the
+    replacement for the whole block, or None to keep it and look inside it."""
+    out, pos = [], 0
+    while True:
+        m = ATT_BEGIN_RE.search(md, pos)
+        if not m:
+            out.append(md[pos:])
+            return ''.join(out)
+        end = ATT_END % m.group(1)
+        e = md.find(end, m.end())
+        if e < 0:
+            out.append(md[pos:m.end()])
+            pos = m.end()
+            continue
+        rep = fn(m, md[m.end():e])
+        if rep is None:
+            out.append(md[pos:m.end()])
+            pos = m.end()
+        else:
+            out.append(md[pos:m.start()])
+            out.append(rep)
+            pos = e + len(end)
+
+
+def att_normalise(md):
+    """Each attachment as its content key, for fingerprints: the same attachment counts the
+    same whether it is inlined, in its own file or pointed to."""
+    if '<!-- doc2kb:att ' not in (md or ''):
+        return md
+    md = _att_scan(md, lambda m, inner: '<attachment %s>' % m.group(2))
+    return ATT_ROW_RE.sub(lambda m: m.group(1) + '-' + m.group(3), md)
+
+
+def att_dedup_text(md, rel, seen, md_dir):
+    """Run-wide duplicates: an attachment converted in full in an earlier document becomes a
+    pointer to it. seen maps a content key to (document, attachment name, file) and grows.
+    Returns (text, separate files no longer used)."""
+    if '<!-- doc2kb:att ' not in (md or ''):
+        return md, []
+    results, gone = {}, []
+
+    def one(m, inner):
+        uid, key, name, fname, ref = m.groups()
+        name, fname = _att_unquote(name), _att_unquote(fname) if fname else None
+        if ref:
+            return None
+        first = seen.get(key)
+        if first is None or first[0] == rel:
+            seen.setdefault(key, (rel, name, fname))
+            return None
+        doc, fname0, file0 = first
+        if file0:
+            where = T('att_same_doc_file', fs_text(doc), fname0, _att_link(file0))
+        else:
+            where = T('att_same_doc', fs_text(doc), fname0)
+        results[uid] = T('att_r_same_doc', fs_text(doc), fname0)
+        if fname:
+            gone.append(fname)
+        return ('\n<!-- doc2kb:att id=%s key=%s name=%s ref -->\n%s\n%s\n'
+                % (uid, key, _att_quote(name), T('att_same_line', name, where), ATT_END % uid))
+
+    md = _att_scan(md, one)
+    if results:
+        md = ATT_ROW_RE.sub(lambda m: (m.group(1) + _att_cell(results[m.group(4)]) + m.group(3))
+                            if m.group(4) in results else m.group(0), md)
+    for rel in gone:
+        try:
+            os.remove(os.path.join(md_dir, *rel.split('/')))
+        except OSError:
+            pass  # already gone; a stray file is harmless
+    return md, gone
+
+
+def att_dedup_entries(entries, md_dir, merge, work_dir=None, batches=None):
+    """Run-wide attachment duplicates, after duplicate documents were removed: in processing
+    order, an attachment already converted in full in an earlier document becomes a pointer.
+    Texts are where the run keeps them: the work folder's batches (merged runs of run_batch),
+    the entries (merged runs of run_files) or the written md files."""
+    seen = {}
+    live = {e['rel']: e for e in entries if e['stat']['status'] == OK}
+
+    def apply(rel, text):
+        new, _ = att_dedup_text(text, rel, seen, md_dir)
+        if new != text:
+            live[rel]['stat']['chars'] = len(new)
+        return new
+
+    if work_dir:
+        for b in batches or []:
+            path = batch_file(work_dir, b)
+            if not os.path.isfile(path):
+                continue
+            saved, changed = read_batch(path), False
+            for se in saved:
+                if se['rel'] in live and se.get('body'):
+                    new = apply(se['rel'], se['body'])
+                    if new != se['body']:
+                        se['body'], changed = new, True
+                        se['stat']['chars'] = len(new)
+            if changed:
+                save_batch(path, saved)
+    else:
+        for e in entries:
+            if e['rel'] not in live:
+                continue
+            if merge:
+                e['body'] = apply(e['rel'], e.get('body', ''))
+                continue
+            p = os.path.join(md_dir, e['stat']['md'])
+            try:
+                with open(p, encoding='utf-8') as f:
+                    text = f.read()
+                new = apply(e['rel'], text)
+                if new != text:
+                    with open(p, 'w', encoding='utf-8', errors='replace') as f:
+                        f.write(new)
+            except OSError:
+                pass  # the file stays as written: the attachment is in it twice, nothing is lost
+    _att_rmdirs(md_dir)
+
+
+def _att_rmdirs(md_dir):
+    """Remove attachment folders left empty."""
+    top = os.path.join(md_dir, T('att_dir'))
+    try:
+        for d in os.listdir(top):
+            try:
+                os.rmdir(os.path.join(top, d))
+            except OSError:
+                pass  # not empty, or a file
+        os.rmdir(top)
+    except OSError:
+        pass  # not there, or not empty
+
+
+def convert(src, ext, md_dir, report, inline_excel=True, imgdir=None, img_ref='images',
+            save_images=True, att=None, display_name=None):
+    """Parse one file by its extension; returns (Markdown, image manifest).
+    inline_excel: convert the attachments inside the document (embedded objects, mail and PDF
+    attachments); off, they are only listed. att: the AttachCtx of the document (process_one()
+    makes one; a library call without it gets one writing separate files to md_dir).
+    display_name: the top heading of formats that have one, instead of the file name.
+    Raises zipfile.BadZipFile or other errors from the parsers; process_one() handles them."""
+    if att is None:
+        att = AttachCtx(md_dir, safe_name(os.path.splitext(os.path.basename(src))[0]), report,
+                        enabled=inline_excel)
+    kw = dict(imgdir=imgdir, img_ref=img_ref, save_images=save_images, att=att)
+    if ext == '.docx':
+        return parse_docx(src, md_dir, report, inline_excel=inline_excel, **kw)
+    if ext == '.pptx':
+        return parse_pptx(src, md_dir, report, **kw)
+    if ext in ('.xlsx', '.xlsm'):
+        return parse_xlsx_file(src, md_dir, report, display_name=display_name, **kw)
+    if ext == '.eml':
+        return parse_eml(src, md_dir, report, inline_excel=inline_excel, **kw)
     if ext == '.xls':
-        return parse_xls_file(src, md_dir, report)
+        return parse_xls_file(src, md_dir, report, display_name=display_name)
     if ext == '.doc':
-        return parse_doc(src, md_dir, report)
+        return parse_doc(src, md_dir, report, att=att)
     if ext == '.ppt':
-        return parse_ppt(src, md_dir, report)
+        return parse_ppt(src, md_dir, report, att=att)
     if ext in VSDX_EXT:
         return parse_vsdx(src, md_dir, report, imgdir=imgdir, img_ref=img_ref,
                           save_images=save_images)
     if ext == '.pdf':
-        md, manifest = parse_pdf(src, md_dir, report, imgdir=imgdir, img_ref=img_ref,
-                                 save_images=save_images)
-        report.warn(T('pdf_lossy'))
+        md, manifest = parse_pdf(src, md_dir, report, display_name=display_name, **kw)
+        if att.depth == 0:
+            report.warn(T('pdf_lossy'))
         return md, manifest
     raise ValueError(ext)
 
@@ -3712,7 +4353,10 @@ def process_one(src, md_dir, report, args, img_root=None, rel_dir='',
     img_root   : picture root; in batch mode md_dir/images, mirrored by rel_dir below it
     rel_dir    : the source file's folder relative to the source root
     md_basename: md file name stem (to tell apart files with the same name)
-    args needs no_inline, sheets and may carry no_images and merge."""
+    args needs no_inline, sheets and may carry no_images, merge, attach_max_chars and
+    att_subdir (the folder below attachments/ for long attachments; run_batch and run_files set
+    it to the merged output name).
+    Long attachments go to md_dir/attachments/ (stat['att_files'] names them)."""
     ext = os.path.splitext(src)[1].lower()
     base = md_basename or safe_name(os.path.splitext(os.path.basename(src))[0])
     save_imgs = not getattr(args, 'no_images', False)
@@ -3737,10 +4381,15 @@ def process_one(src, md_dir, report, args, img_root=None, rel_dir='',
         stat['status'] = FAILED
         stat['note'] = T('unsupported', ext)
         return stat, '', []
+    att = AttachCtx(md_dir, base, report, enabled=not getattr(args, 'no_inline', False),
+                    max_chars=getattr(args, 'attach_max_chars', None),
+                    doc_name=fs_text(os.path.basename(src)),
+                    subdir=getattr(args, 'att_subdir', '') or '')
+    stat['att_files'] = att.shared['files']
     try:
         md, manifest = convert(src, ext, md_dir, report,
-                               inline_excel=not getattr(args, 'no_inline', False),
-                               imgdir=imgdir, img_ref=img_ref, save_images=save_imgs)
+                               inline_excel=att.enabled,
+                               imgdir=imgdir, img_ref=img_ref, save_images=save_imgs, att=att)
     except zipfile.BadZipFile:
         stat['status'] = FAILED
         stat['note'] = T('corrupt_note')
@@ -3795,13 +4444,15 @@ def process_one(src, md_dir, report, args, img_root=None, rel_dir='',
 # ================================================================ index
 
 def extract_outline(md, max_headings=40, summary_chars=200):
-    """Opening text and the level 1 and 2 headings of a Markdown text."""
+    """Opening text and the level 1 and 2 headings of a Markdown text (attachments left out)."""
+    if '<!-- doc2kb:att ' in md:
+        md = _att_scan(md, lambda m, inner: '')
     lines = md.split('\n')
     # opening text: skip the quoted header and headings, take the first body paragraphs
     summary_parts = []
     for ln in lines:
         t = ln.strip()
-        if not t or t[0] in '>#|*' or t.startswith('---'):
+        if not t or t[0] in '>#|*' or t.startswith('---') or t.startswith('<!--'):
             continue
         if t.startswith('[图') or t.startswith('[Image') or t.startswith('（AI'):
             continue
@@ -4359,6 +5010,7 @@ def _run_batch(args, cache, writer=None):
     os.makedirs(md_dir, exist_ok=True)
     merge = getattr(args, 'merge', False)
     out_name = args.merge_name or safe_name(os.path.basename(src_root))
+    args.att_subdir = safe_component(out_name) if merge else ''
 
     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
     entries, skipped = [], []
@@ -4387,6 +5039,7 @@ def _run_batch(args, cache, writer=None):
     if merge:
         work_dir = os.path.join(md_dir, WORK_DIR, safe_component(out_name))
         sig = {'lang': LANG, 'inline': not getattr(args, 'no_inline', False),
+               'att_max': getattr(args, 'attach_max_chars', None) or ATT_MAX_CHARS,
                'images': not getattr(args, 'no_images', False),
                'dedup': not getattr(args, 'no_dedup', False),
                'sheets': bool(getattr(args, 'sheets', False))}
@@ -4538,6 +5191,10 @@ def _run_batch(args, cache, writer=None):
     fp_db = getattr(args, 'fp_db', None)
     if fp_db:
         entries, moved = drop_known_entries(entries, load_fp_db(fp_db), md_dir, img_root)
+
+    # across documents: an attachment converted in full once, pointers elsewhere
+    if not getattr(args, 'no_inline', False):
+        att_dedup_entries(entries, md_dir, merge, work_dir=work_dir, batches=batches)
 
     ts_end = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
     names = volume_names(out_name, nb)
@@ -4716,6 +5373,8 @@ def _run_files(args, cache, writer=None):
         md_dir = os.path.join(src_root, base0 + T('out_dir_suffix'))
     os.makedirs(md_dir, exist_ok=True)
     img_root = os.path.join(md_dir, 'images')
+    args.att_subdir = safe_component(args.merge_name or safe_name(os.path.basename(src_root))) \
+        if merge else ''
 
     entries = []
     bases = base_names(items)
@@ -4776,6 +5435,8 @@ def _run_files(args, cache, writer=None):
     if not getattr(args, 'no_dedup', False):
         entries = add_byte_duplicates(entries, dups)
         entries, dup_groups = dedup_entries(entries, md_dir, img_root, Report(), merge=merge)
+    if not getattr(args, 'no_inline', False):
+        att_dedup_entries(entries, md_dir, merge)
 
     ts_end = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
     rp = write_batch_report(entries, md_dir, ts_end, src_root, [], [],
@@ -4834,7 +5495,11 @@ def build_parser():
     ap.add_argument('--lang', choices=LANGS, default=default_lang(),
                     help='language of labels in the output (default: environment variable DOC2KB_LANG, else en)')
     ap.add_argument('--no-inline', action='store_true',
-                    help='do not expand embedded workbooks into the text')
+                    help='do not convert attachments (embedded objects, mail and PDF attachments); '
+                         'only list them')
+    ap.add_argument('--attach-max-chars', metavar='N', type=int, default=ATT_MAX_CHARS,
+                    help='an attachment whose text is longer than N characters goes to its own file '
+                         'in attachments/ instead of the text (default %d)' % ATT_MAX_CHARS)
     ap.add_argument('--files', metavar='FILE', default=None,
                     help='read the paths to process from a list file, one per line')
     ap.add_argument('--merge', action='store_true',

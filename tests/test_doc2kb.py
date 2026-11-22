@@ -320,6 +320,168 @@ class ArchiveTest(Tmp):
         self.assertIn("larger than", ok[0]["error"])
 
 
+class AttachmentTest(Tmp):
+    """Attachments in every carrier: converted, placed by length, counted once per run."""
+
+    PLAN = ["Plan of the Atlas pilot", "Second plan line"]
+
+    def build(self):
+        src = self.p("src")
+        os.makedirs(src)
+        plan = fx.docx_bytes(self.PLAN)
+        book = fx.xlsx_bytes({"Costs": [["item", "cost"], ["desk", 3]]})
+        legacy_xls = fx.cfb_bytes(fx.xls_bytes(streams_only=True))
+        with open(os.path.join(src, "host.docx"), "wb") as f:
+            f.write(fx.docx_bytes(["Host text"], {
+                "legacy.xls": legacy_xls, "pkg.bin": fx.ole_package("note.docx", fx.docx_bytes(["Packaged note"])),
+                "book.xlsx": book}))
+        fx.pptx_with_object(os.path.join(src, "deck.pptx"), "inner.docx", fx.docx_bytes(["Slide object text"]))
+        fx.xlsx_with_object(os.path.join(src, "sheet.xlsx"), "inner.docx", fx.docx_bytes(["Sheet object text"]))
+        pool = {"ObjectPool/_1/" + k: v for k, v in fx.xls_bytes(streams_only=True).items()}
+        with open(os.path.join(src, "old.doc"), "wb") as f:
+            f.write(fx.doc_bytes(extra=pool))
+        with open(os.path.join(src, "older.ppt"), "wb") as f:
+            f.write(fx.ppt_bytes(obj=fx.cfb_bytes({"Package": fx.docx_bytes(["Legacy slide object"])})))
+        fx.pdf(os.path.join(src, "withfile.pdf"), ["PDF host text line"] * 5,
+               files={"att.docx": fx.docx_bytes(["Inside the PDF attachment"])})
+        inner = fx.mail_with(self.p("inner.tmp"), "Inner mail", "Inner body text", [], boundary="IN")
+        inner_mail = read_bytes(inner)
+        os.remove(inner)
+        deep = fx.zip_bytes({"lvl1.zip": fx.zip_bytes({"deep.docx": fx.docx_bytes(["Deep doc"], {"x.xlsx": book})})})
+        fx.mail_with(os.path.join(src, "mail-a.eml"), "Mail A", "Body A", [
+            ("plan.docx", plan), ("pack.zip", fx.zip_bytes({"c.docx": fx.docx_bytes(["Zipped doc"])})),
+            (None, inner_mail), ("old.msg", b"\xd0\xcf\x11\xe0junk"), ("deep.zip", deep)])
+        fx.mail_with(os.path.join(src, "mail-b.eml"), "Mail B", "Body B", [("plan-copy.docx", plan)])
+        return src
+
+    def convert(self, *extra, lang="en"):
+        out = self.p("out")
+        p = run([sys.executable, CORE, "--batch", self.build(), "-o", out, "--lang", lang, *extra])
+        return out, p.stdout
+
+    def all_text(self, out):
+        texts = []
+        for root, _, files in os.walk(out):
+            texts += [read(os.path.join(root, f)) for f in files if f.endswith(".md")]
+        return "\n".join(texts)
+
+    def test_every_carrier(self):
+        out, _ = self.convert()
+        host = read(os.path.join(out, "host.md"))
+        self.assertIn("**Inline attachment: legacy.xls**", host)          # legacy workbook in a docx
+        self.assertIn("Riverside Clinic supplies list", host)
+        self.assertIn("pkg.bin (holds note.docx)", host)                   # OLE package unwrapped
+        self.assertIn("Packaged note", host)
+        self.assertIn("| desk | 3 |", host)
+        self.assertNotIn("could not be opened automatically", host)
+        self.assertIn("| No. | Attachment | Size | Type | Result |", host)
+        deck = read(os.path.join(out, "deck.md"))
+        self.assertLess(deck.index("Slide with object"), deck.index("Slide object text"))
+        self.assertIn("Sheet object text", read(os.path.join(out, "sheet.md")))
+        self.assertIn("embedded object _1", read(os.path.join(out, "old.md")))
+        ppt = read(os.path.join(out, "older.md"))
+        self.assertLess(ppt.index("中文第二页"), ppt.index("Legacy slide object"))   # after its slide
+        if shutil.which("pdfdetach") and HAS_PDF:
+            self.assertIn("Inside the PDF attachment", read(os.path.join(out, "withfile.md")))
+        mail = read(os.path.join(out, "mail-a.md"))
+        body = mail[mail.index("## Body"):mail.index("## Attachments")]
+        self.assertNotIn("Inner body text", body)                          # an attached mail stays apart
+        self.assertIn("**Inline attachment: Inner mail.eml**", mail)
+        self.assertIn("Inner body text", mail)
+        self.assertIn("Zipped doc", mail)
+        self.assertIn("| old.msg | 8 B | msg | not opened: legacy binary format", mail)
+        self.assertIn("Deep doc", mail)
+        self.assertIn("(x.xlsx, nested more than 3 levels)", mail)
+        # markers stay out of the index summaries
+        self.assertNotIn("doc2kb:att", read(os.path.join(out, "_kb-index.md")))
+
+    def test_same_attachment_once_per_run(self):
+        out, _ = self.convert()
+        self.assertEqual(self.all_text(out).count("Plan of the Atlas pilot"), 1)
+        b = read(os.path.join(out, "mail-b.md"))
+        self.assertIn('has exactly the same content as the one in mail-a.eml (attachment "plan.docx")', b)
+        self.assertIn('| same as in mail-a.eml, attachment "plan.docx"', b)
+
+    def test_long_attachments_in_their_own_file(self):
+        out, _ = self.convert("--attach-max-chars", "30", lang="zh")
+        d = os.path.join(out, "附件")
+        files = sorted(os.listdir(d))
+        self.assertIn("mail-a-1-plan.md", files)
+        own = read(os.path.join(d, "mail-a-1-plan.md"))
+        self.assertTrue(own.startswith("> mail-a.eml 中的附件：plan.docx\n\nPlan of the Atlas pilot"))
+        a = read(os.path.join(out, "mail-a.md"))
+        self.assertIn("已单独成文件：[mail-a-1-plan.md](附件/mail-a-1-plan.md)", a)
+        self.assertIn("| 单独文件：[mail-a-1-plan.md](附件/mail-a-1-plan.md)", a)
+        # the copy in the other mail points to that file; no second file was kept
+        b = read(os.path.join(out, "mail-b.md"))
+        self.assertIn("（[单独文件](附件/mail-a-1-plan.md)）", b)
+        self.assertEqual(self.all_text(out).count("Plan of the Atlas pilot"), 1)
+        self.assertFalse([f for f in files if f.startswith("mail-b-")])
+        # a short one stays in the text
+        self.assertIn("Sheet object text", read(os.path.join(out, "sheet.md")))
+
+    def test_merged_volumes(self):
+        out, _ = self.convert("--merge", "--merge-name", "all", "--batch-size", "2")
+        vols = sorted(f for f in os.listdir(out) if re.match(r"all-\d+\.md$", f))
+        self.assertGreater(len(vols), 2)
+        text = "".join(read(os.path.join(out, v)) for v in vols)
+        self.assertEqual(text.count("Plan of the Atlas pilot"), 1)
+        self.assertIn('the one in mail-a.eml (attachment "plan.docx")', text)
+
+    def test_merged_long_attachments_in_a_folder_of_their_own(self):
+        out, _ = self.convert("--merge", "--merge-name", "all", "--attach-max-chars", "30")
+        d = os.path.join(out, "attachments", "all")
+        self.assertIn("mail-a-1-plan.md", os.listdir(d))
+        text = read(os.path.join(out, "all.md"))
+        self.assertIn("[mail-a-1-plan.md](attachments/all/mail-a-1-plan.md)", text)
+        self.assertIn("[own file](attachments/all/mail-a-1-plan.md)", text)
+        self.assertEqual(self.all_text(out).count("Plan of the Atlas pilot"), 1)
+
+    def test_kept_copy_holds_the_full_attachment(self):
+        """Two documents with the same text: the newer one is kept, and it has the attachment in
+        full even though the older one came first."""
+        src = self.p("src")
+        os.makedirs(src)
+        emb = {"spec.docx": fx.docx_bytes(["Specification body"])}
+        for name, when in (("a.docx", "2026-01-01T00:00:00Z"), ("b.docx", "2026-05-01T00:00:00Z")):
+            with open(os.path.join(src, name), "wb") as f:
+                f.write(fx.docx_bytes(["Same text"], emb, modified=when))
+        out = self.p("out")
+        run([sys.executable, CORE, "--batch", src, "-o", out, "--lang", "en"])
+        self.assertFalse(os.path.exists(os.path.join(out, "a.md")))
+        b = read(os.path.join(out, "b.md"))
+        self.assertIn("Specification body", b)
+        self.assertIn("1 more copies with the same content", b)
+
+    def test_switched_off(self):
+        out, _ = self.convert("--no-inline")
+        text = self.all_text(out)
+        self.assertNotIn("Inline attachment", text)
+        self.assertFalse(os.path.exists(os.path.join(out, "attachments")))
+        mail = read(os.path.join(out, "mail-a.md"))
+        self.assertIn("> Attachments were not read in this run; they are only listed here.", mail)
+        self.assertIn("| docx | not read |", mail)
+        self.assertIn("| legacy.xls |", read(os.path.join(out, "host.md")))
+
+    def test_fingerprint_ignores_placement(self):
+        full = ("x\n<!-- doc2kb:att id=a1 key=abc name=n -->\nlong text\n<!-- /doc2kb:att id=a1 -->\n"
+                "| 1 | n | 1 B | docx | inline <!-- doc2kb:att-row id=a1 --> |\n")
+        ptr = ("x\n<!-- doc2kb:att id=a1 key=abc name=n ref -->\n> pointer\n<!-- /doc2kb:att id=a1 -->\n"
+               "| 1 | n | 1 B | docx | same as … <!-- doc2kb:att-row id=a1 --> |\n")
+        self.assertEqual(core.text_fingerprint(full), core.text_fingerprint(ptr))
+        self.assertEqual(core.content_fingerprint(full, []), core.content_fingerprint(ptr, []))
+
+    def test_library_convert(self):
+        path = self.p("lib.docx")
+        with open(path, "wb") as f:
+            f.write(fx.docx_bytes(["Lib"], {"e.docx": fx.docx_bytes(["Embedded in library call"])}))
+        md, _ = core.convert(path, ".docx", self.d, core.Report())
+        self.assertIn("Embedded in library call", md)
+        md, _ = core.convert(path, ".docx", self.d, core.Report(), inline_excel=False)
+        self.assertNotIn("Embedded in library call", md)
+        self.assertIn("| e.docx |", md)
+
+
 class LegacyOfficeTest(Tmp):
     """Legacy binary Office files built by the fixtures: text, tables, slides, metadata, errors."""
 
@@ -637,6 +799,27 @@ class ShellTest(Tmp):
         p = self.sh("-s", src, "-o", out)          # nothing new since the run above
         self.assertEqual((p.returncode, p.stdout), (0, ""))
         self.assertIn("nothing new", read(os.path.join(out, "_watch.log")))
+
+    def test_attachment_length_option(self):
+        src, out = self.p("src"), self.p("out")
+        os.makedirs(src)
+        with open(self.p("src", "a.docx"), "wb") as f:
+            f.write(fx.docx_bytes(["Host"], {"e.docx": fx.docx_bytes(["Embedded text for the option"])}))
+        p = self.sh("-s", src, "-o", out, "-t", "2000-01-01", "-a", "x")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("-a/--attach-max-chars", p.stderr)
+        p = self.sh("-s", src, "-o", out, "-t", "2000-01-01", "-a", "5")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        sub = os.listdir(os.path.join(out, "attachments"))
+        self.assertEqual(len(sub), 1)
+        self.assertTrue(sub[0].endswith("_incremental"), sub)
+        self.assertIn("Embedded text for the option", self.all_md(out))
+
+    def all_md(self, out):
+        texts = []
+        for root, _, files in os.walk(out):
+            texts += [read(os.path.join(root, f)) for f in files if f.endswith(".md")]
+        return "\n".join(texts)
 
     def test_incremental_volumes_progress_and_same_day_name(self):
         src, out = self.p("src"), self.p("out")

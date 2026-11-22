@@ -1124,6 +1124,8 @@ dialog[open]{animation:dialog-in .16s cubic-bezier(.2,.8,.3,1)}
   <div class="check o-merge-row"><input class="o-merge" type="checkbox" checked><label><span><span data-t="opt_merge"></span></span></label></div>
   <h3 data-t="h_options"></h3>
   <div class="check"><input class="o-inline" type="checkbox" checked><label><span><span data-t="opt_inline"></span><small data-t="opt_inline_d"></small></span></label></div>
+  <label class="field o-attmax-row" style="margin:4px 0 8px 28px"><span data-t="opt_attmax"></span>
+    <input class="o-attmax" type="number" min="0" max="10000000" step="1" value="20000" inputmode="numeric" style="width:130px;display:block;margin-top:4px"></label>
   <div class="check"><input class="o-images" type="checkbox"><label><span><span data-t="opt_images"></span><small data-t="opt_images_d"></small></span></label></div>
   <div class="check"><input class="o-sheets" type="checkbox" disabled><label><span><span data-t="opt_sheets"></span><small class="o-sheets-hint"></small></span></label></div>
   <div class="check"><input class="o-dups" type="checkbox"><label><span><span data-t="opt_dups"></span><small data-t="opt_dups_d"></small></span></label></div>
@@ -1322,7 +1324,8 @@ const S = {
     h_output: 'Output', out_label: 'Output folder (created when missing)',
     h_options: 'Options',
     opt_merge: 'Merge', opt_merge_d: 'Index and all text in one md.',
-    opt_inline: 'Expand embedded Excel', opt_inline_d: 'Workbooks embedded in docx become tables in the text.',
+    opt_inline: 'Read attachments', opt_inline_d: 'Embedded objects, mail and PDF attachments are converted; the same content once per run. Off: only listed.',
+    opt_attmax: 'Attachments longer than this many characters go to their own file',
     opt_images: 'Export images', opt_images_d: 'Writes picture files; without it the text keeps the image anchors and runs faster.',
     opt_sheets_d: 'Tiles exported pictures 4×4 into numbered sheets.', opt_sheets: 'Contact sheets',
     sheets_need_images: 'Tiles exported pictures 4×4 into numbered sheets. Needs "Export images".',
@@ -1461,7 +1464,8 @@ const S = {
     h_output: '输出', out_label: '输出目录（不存在时自动创建）',
     h_options: '选项',
     opt_merge: '合并输出', opt_merge_d: '索引与全部正文写进一个 md。',
-    opt_inline: '展开内嵌 Excel', opt_inline_d: '把 docx 里嵌入的 Excel 附件展开成正文表格。',
+    opt_inline: '解析附件', opt_inline_d: '解析文档内嵌对象、邮件附件和 PDF 内附件，同一内容整批只展开一次；关闭则只登记清单。',
+    opt_attmax: '附件超过此字数时单独成文件',
     opt_images: '导出图片', opt_images_d: '写出图片文件；不勾选时正文仍保留图片锚点，处理更快。',
     opt_sheets_d: '把导出的图片按 4×4 拼成带编号的大图。', opt_sheets: '合并拼图',
     sheets_need_images: '把导出的图片按 4×4 拼成带编号的大图，需先勾选「导出图片」。',
@@ -1847,12 +1851,15 @@ document.querySelectorAll('.opts').forEach(box => {
     box.querySelector('.o-merge').checked = box.querySelector('.o-mode[value=merge]').checked; syncOptions(); }); });
   box.querySelector('.o-merge').addEventListener('change', syncOptions);
   box.querySelector('.o-images').addEventListener('change', syncOptions);
+  box.querySelector('.o-inline').addEventListener('change', syncOptions);
 });
 function opt(prefix, cls) { return document.querySelector('.opts[data-prefix="' + prefix + '"] .' + cls); }
 function optionsBody(prefix) {
+  const n = Number(opt(prefix, 'o-attmax').value);
   return {merge: opt(prefix, 'o-merge').checked, inline: opt(prefix, 'o-inline').checked,
           images: opt(prefix, 'o-images').checked, sheets: opt(prefix, 'o-sheets').checked,
-          keep_dups: opt(prefix, 'o-dups').checked};
+          keep_dups: opt(prefix, 'o-dups').checked,
+          attach_max_chars: Number.isInteger(n) && n >= 0 ? n : -1};
 }
 function syncOptions() {
   const montage = status && status.tools.montage;
@@ -1861,6 +1868,7 @@ function syncOptions() {
     sheets.disabled = !montage || !images.checked || jobRunning;
     if (sheets.disabled) sheets.checked = false;
     opt(prefix, 'o-sheets-hint').textContent = !montage ? t('sheets_no_tool') : (images.checked ? t('opt_sheets_d') : t('sheets_need_images'));
+    opt(prefix, 'o-attmax').disabled = !opt(prefix, 'o-inline').checked || jobRunning || !alive;
   });
   ['b', 'f'].forEach(prefix => {
     const m = opt(prefix, 'o-merge').checked, box = document.querySelector('.opts[data-prefix="' + prefix + '"]');
@@ -2392,6 +2400,7 @@ function poll() {
 const TAB_OF = {scan: 'tab-batch', run: 'tab-batch', files: 'tab-files', tasks: 'tab-tasks', dedup: 'tab-dedup'};
 function setOptions(prefix, p) {
   opt(prefix, 'o-merge').checked = !!p.merge; opt(prefix, 'o-inline').checked = !!p.inline;
+  opt(prefix, 'o-attmax').value = p.attach_max_chars === undefined ? 20000 : p.attach_max_chars;
   opt(prefix, 'o-images').checked = !!p.images; opt(prefix, 'o-dups').checked = !!p.keep_dups;
   syncOptions();
   opt(prefix, 'o-sheets').checked = !!p.sheets && !opt(prefix, 'o-sheets').disabled;

@@ -226,20 +226,29 @@ def eml(path, english=False):
     return path
 
 
-def pdf(path, lines):
-    """A one-page PDF with a text layer (ASCII only, Helvetica)."""
+def pdf(path, lines, files=None):
+    """A one-page PDF with a text layer (ASCII only, Helvetica); files: {name: bytes} attached
+    to the document (an EmbeddedFiles name tree)."""
     content = "BT /F1 12 Tf 72 720 Td 14 TL " + " ".join(
         "(" + ln.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)") + ") '" for ln in lines) + " ET"
-    objs = ["<< /Type /Catalog /Pages 2 0 R >>",
+    files = files or {}
+    names = " ".join(f"({n}) {6 + 2 * i} 0 R" for i, n in enumerate(files))
+    catalog = ("<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [%s] >> >> >>" % names
+               if files else "<< /Type /Catalog /Pages 2 0 R >>")
+    objs = [catalog,
             "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
             ("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> "
              "/Contents 5 0 R >>"),
             "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
             f"<< /Length {len(content)} >>\nstream\n{content}\nendstream"]
+    for i, (n, data) in enumerate(files.items()):
+        objs.append(f"<< /Type /Filespec /F ({n}) /UF ({n}) /EF << /F {7 + 2 * i} 0 R >> >>")
+        objs.append(b"<< /Type /EmbeddedFile /Length %d >>\nstream\n" % len(data) + data + b"\nendstream")
     out, offsets = b"%PDF-1.4\n", []
     for i, o in enumerate(objs, 1):
         offsets.append(len(out))
-        out += f"{i} 0 obj\n{o}\nendobj\n".encode("latin-1")
+        body = o if isinstance(o, bytes) else o.encode("latin-1")
+        out += f"{i} 0 obj\n".encode() + body + b"\nendobj\n"
     xref = len(out)
     out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
     out += "".join(f"{o:010d} 00000 n \n" for o in offsets).encode()
@@ -273,7 +282,8 @@ SUMMARY_FMTID = bytes.fromhex("e0859ff2f94f6810ab9108002b27b3d9")
 
 
 def cfb_bytes(streams):
-    """An OLE2 compound file (512-byte sectors) holding the given {name: bytes} at the top level.
+    """An OLE2 compound file (512-byte sectors) holding the given {name: bytes}; a name with "/"
+    puts the stream in a storage ("ObjectPool/_1/Workbook").
     Streams under 4096 bytes go to the mini stream, as Office writes them."""
     names = list(streams)
     mini, mini_start, big = b"", {}, []
@@ -296,7 +306,8 @@ def cfb_bytes(streams):
     def sectors(data):
         return max(1, (len(data) + 511) // 512) if data else 0
 
-    dir_bytes = 128 * (len(names) + 1)
+    storages = sorted({"/".join(n.split("/")[:k]) for n in names for k in range(1, n.count("/") + 1)})
+    dir_bytes = 128 * (len(names) + len(storages) + 1)
     n_dir = (dir_bytes + 511) // 512
     minifat_raw = struct.pack("<%dI" % len(minifat), *minifat) if minifat else b""
     n_minifat = sectors(minifat_raw)
@@ -328,10 +339,30 @@ def cfb_bytes(streams):
                 struct.pack("<III", NOSTREAM, right, child) + b"\0" * 36 +
                 struct.pack("<III", start, size, 0))
 
-    entries = [entry("Root Entry", 5, root_start, len(mini), child=1 if names else NOSTREAM)]
-    for i, n in enumerate(names):
-        start = layout.get(n, mini_start.get(n))
-        entries.append(entry(n, 2, start, len(streams[n]), right=i + 2 if i + 1 < len(names) else NOSTREAM))
+    tree = {}
+    for n in names:
+        node = tree
+        parts = n.split("/")
+        for part in parts[:-1]:
+            node = node.setdefault(part, {})
+        node[parts[-1]] = n
+    entries = [None]
+
+    def build(items):
+        idx = []
+        for nm, val in items:
+            idx.append((len(entries), nm, val))
+            entries.append(None)
+        for k, (i, nm, val) in enumerate(idx):
+            right = idx[k + 1][0] if k + 1 < len(idx) else NOSTREAM
+            if isinstance(val, dict):
+                entries[i] = entry(nm, 1, 0, 0, child=build(list(val.items())), right=right)
+            else:
+                entries[i] = entry(nm, 2, layout.get(val, mini_start.get(val)), len(streams[val]), right=right)
+        return idx[0][0] if idx else NOSTREAM
+
+    first = build(list(tree.items()))
+    entries[0] = entry("Root Entry", 5, root_start, len(mini), child=first)
     dir_raw = b"".join(entries).ljust(n_dir * 512, b"\0")
 
     header = (bytes.fromhex("d0cf11e0a1b11ae1") + b"\0" * 16 +
@@ -404,7 +435,7 @@ def _rk(i):
     return ((i << 2) | 2) & 0xFFFFFFFF
 
 
-def xls_bytes(encrypted=False, author="", last_author=""):
+def xls_bytes(encrypted=False, author="", last_author="", streams_only=False):
     """A workbook with two worksheets and a chart sheet: shared strings cut across CONTINUE
     records, numbers as NUMBER, RK and MULRK, dates by a built-in and a custom format, a formula
     with a text result, a boolean and an error value."""
@@ -443,7 +474,7 @@ def xls_bytes(encrypted=False, author="", last_author=""):
     streams = {"Workbook": wb.ljust(4096, b"\0")}
     if author or last_author:
         streams["\x05SummaryInformation"] = summary_info(author, last_author)
-    return cfb_bytes(streams)
+    return streams if streams_only else cfb_bytes(streams)
 
 
 def xls(path, **kw):
@@ -452,7 +483,7 @@ def xls(path, **kw):
     return path
 
 
-def doc_bytes(encrypted=False, author="", saved=None):
+def doc_bytes(encrypted=False, author="", saved=None, extra=None):
     """A Word 97 document: a paragraph in a compressed piece, then a Unicode piece with a two-row
     table (one cell holds two paragraphs, one cell is empty), a field and a closing paragraph.
     The table rows are marked in the paragraph properties the way Word marks them."""
@@ -509,6 +540,7 @@ def doc_bytes(encrypted=False, author="", saved=None):
     streams = {"WordDocument": bytes(wd), "1Table": table.ljust(4096, b"\0")}
     if author or saved is not None:
         streams["\x05SummaryInformation"] = summary_info(author, "", saved)
+    streams.update(extra or {})
     return cfb_bytes(streams)
 
 
@@ -522,7 +554,7 @@ def _prec(rt, body, inst=0, container=False):
     return struct.pack("<HHI", (inst << 4) | (0xF if container else 0), rt, len(body)) + body
 
 
-def ppt_bytes(encrypted=False):
+def ppt_bytes(encrypted=False, obj=None):
     """A presentation with two slides in the document's slide list: slide 1 refers to its title
     in the slide list, slide 2 holds its text in the slide itself. An older copy of slide 2
     stays in the stream without being referenced, as after a fast save."""
@@ -532,14 +564,20 @@ def ppt_bytes(encrypted=False):
     slwt = _prec(0x0FF0, _prec(0x03F3, struct.pack("<IIIII", 2, 0, 0, 256, 0)) +
                  _prec(0x0F9F, struct.pack("<I", 0)) + chars("Project Atlas 概览\rSecond line") +
                  _prec(0x03F3, struct.pack("<IIIII", 3, 0, 0, 257, 0)), inst=0, container=True)
-    docc = _prec(0x03E8, _prec(0x03E9, b"\0" * 40) + slwt, container=True)
+    objlist = b""
+    if obj is not None:     # object 7, stored as persist object 4
+        atom = _prec(0x0FC3, struct.pack("<IIIIII", 1, 0, 7, 0, 4, 0))
+        objlist = _prec(0x0409, _prec(0x040A, struct.pack("<I", 7)) +
+                        _prec(0x0FCC, atom, container=True), container=True)
+    docc = _prec(0x03E8, _prec(0x03E9, b"\0" * 40) + objlist + slwt, container=True)
 
     def slide(inner):
         return _prec(0x03EE, _prec(0xF002, _prec(0xF00D, inner, container=True), container=True), container=True)
 
     stale = slide(_prec(0x0FA8, b"Old version"))
     s1 = slide(_prec(0x0F9E, struct.pack("<i", 0)))
-    s2 = slide(_prec(0x0FA8, b"Plain bytes text") + chars("中文第二页"))
+    ref = _prec(0xF011, _prec(0x0BC1, struct.pack("<I", 7)), container=True) if obj is not None else b""
+    s2 = slide(_prec(0x0FA8, b"Plain bytes text") + chars("中文第二页") + ref)
     stream = bytearray(docc)
     offs = {1: 0}
     stream += stale
@@ -547,8 +585,12 @@ def ppt_bytes(encrypted=False):
     stream += s1
     offs[3] = len(stream)
     stream += s2
-    pd_off = len(stream)
     pd = struct.pack("<I", 1 | (3 << 20)) + struct.pack("<III", offs[1], offs[2], offs[3])
+    if obj is not None:
+        stg_off = len(stream)
+        stream += _prec(0x1011, struct.pack("<I", len(obj)) + zlib.compress(obj), inst=1)
+        pd += struct.pack("<I", 4 | (1 << 20)) + struct.pack("<I", stg_off)
+    pd_off = len(stream)
     stream += _prec(0x1772, pd)
     ue_off = len(stream)
     stream += _prec(0x0FF5, struct.pack("<IHBBIIIII", 0, 0, 0, 3, 0, pd_off, 1, 4, 0))
@@ -629,3 +671,87 @@ def vsdx(path, english=False, stencil=False):
         "visio/media/image1.png": png(200, 100, 60),
     })
     return _zip(path, parts)
+
+
+# ---------------------------------------------------------------- attachments
+
+def docx_bytes(paragraphs, embedded=None, modified=None):
+    """A plain docx: {paragraph text}; embedded: {file name: bytes} as OLE objects after the text;
+    modified: the document's last-modified time."""
+    import io
+    embedded = embedded or {}
+    body = "".join(_p(t) for t in paragraphs)
+    body += "".join(_ole_p(f"rId{i}") for i in range(1, len(embedded) + 1))
+    parts = {"word/document.xml": _doc(body), "word/styles.xml": STYLES,
+             "word/_rels/document.xml.rels": _rels([(f"rId{i}", f"embeddings/{n}")
+                                                    for i, n in enumerate(embedded, 1)])}
+    for n, data in embedded.items():
+        parts[f"word/embeddings/{n}"] = data
+    if modified:
+        parts["docProps/core.xml"] = CORE.format(modified)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml", '<?xml version="1.0"?><Types/>')
+        for name, data in parts.items():
+            z.writestr(name, data)
+    return buf.getvalue()
+
+
+def zip_bytes(members):
+    import io
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data in members.items():
+            z.writestr(name, data)
+    return buf.getvalue()
+
+
+def ole_package(name, data):
+    """An OLE package object (a file wrapped by the office application): the \x01Ole10Native stream."""
+    raw_name = name.encode("latin-1") + b"\0"
+    # label, source path, reserved, temp path length, temp path; both paths are the bare name here
+    body = (struct.pack("<H", 2) + raw_name + raw_name + struct.pack("<II", 0, len(raw_name)) +
+            raw_name + struct.pack("<I", len(data)) + data)
+    return cfb_bytes({"\x01Ole10Native": struct.pack("<I", len(body)) + body})
+
+
+def pptx_with_object(path, obj_name, obj):
+    s1 = (f'<p:sld xmlns:p="{P}" xmlns:a="{A}" xmlns:r="{R}"><p:cSld><p:spTree>'
+          "<p:sp><p:txBody><a:p><a:r><a:t>Slide with object</a:t></a:r></a:p></p:txBody></p:sp>"
+          '<p:graphicFrame><a:graphic><a:graphicData><p:oleObj r:id="rId1"/></a:graphicData></a:graphic>'
+          "</p:graphicFrame></p:spTree></p:cSld></p:sld>")
+    return _zip(path, {"ppt/slides/slide1.xml": s1,
+                       "ppt/slides/_rels/slide1.xml.rels": _rels([("rId1", f"../embeddings/{obj_name}")]),
+                       f"ppt/embeddings/{obj_name}": obj})
+
+
+def xlsx_with_object(path, obj_name, obj):
+    parts = _unzip(xlsx_bytes({"Main": [["k", "v"], ["a", 1]]}))
+    rel = (f'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="{PR}">'
+           f'<Relationship Id="rId1" Type="{R}/oleObject" Target="../embeddings/{obj_name}"/></Relationships>')
+    parts["xl/worksheets/_rels/sheet1.xml.rels"] = rel
+    parts[f"xl/embeddings/{obj_name}"] = obj
+    return _zip(path, parts)
+
+
+def mail_with(path, subject, body, attachments, date="Tue, 03 Mar 2026 10:00:00 -0000", boundary="B"):
+    """A plain-text mail; attachments: [(file name, bytes)] or [(None, mail bytes)] for an
+    attached mail (message/rfc822), which needs a boundary of its own."""
+    import base64
+    out = [f"From: Alice <alice@example.com>\nTo: Bob <bob@example.com>\nSubject: {subject}\n"
+           f"Date: {date}\nMIME-Version: 1.0\n"
+           f'Content-Type: multipart/mixed; boundary="{boundary}"\n\n'
+           f'--{boundary}\nContent-Type: text/plain; charset="utf-8"\n\n' + body + "\n"]
+    for name, data in attachments:
+        if name is None:
+            out.append(f'--{boundary}\nContent-Type: message/rfc822\nContent-Disposition: attachment\n\n'
+                       + data.decode("utf-8") + "\n")
+            continue
+        enc = base64.b64encode(data).decode()
+        out.append(f'--{boundary}\nContent-Type: application/octet-stream\n'
+                   f'Content-Disposition: attachment; filename="{name}"\n'
+                   f"Content-Transfer-Encoding: base64\n\n{enc}\n")
+    out.append(f"--{boundary}--\n")
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write("".join(out))
+    return path

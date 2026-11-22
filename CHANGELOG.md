@@ -2,6 +2,14 @@
 
 Releases follow VERSION; merging a version change to main publishes v<version> (.github/workflows/release.yml).
 
+## 2.7.0
+
+- Attachments are converted, not only listed. Objects embedded in docx (also legacy workbooks and documents and OLE packages, which earlier left a "could not be opened" note), pptx (after their slide), xlsx (after their sheet), doc (the `ObjectPool` storages) and ppt (after the slide that refers to them), mail attachments (a zip archive's documents, an attached mail as one attachment instead of merged into the body) and files attached to a PDF (through `pdfdetach`) go through the same parsers as files of their own, by their real type. SPEC 3.5.
+- Placement by length: up to `--attach-max-chars` characters (default 20000; `doc2kb.sh -a N`, a field beside the option on the page) the text is inlined with demoted headings; longer text goes to its own file, `attachments/<document>-<n>-<attachment>.md` (`附件/` in Chinese; merged and incremental runs below `attachments/<merged name>/`), linked from the text. Pictures in attachments are counted, not exported. Nesting stops after 3 levels and at 100 MB, with a note in place.
+- Every document with attachments has a list: name, size, type and result (inlined, own file, same as an earlier one, not opened with the reason, nested too deep, not read).
+- The same attachment is written out in full once per run: within a document as before, and across documents after duplicate documents were removed, so a kept document never points to a dropped one; the other places point to the first, and a copy's own file is not kept. Fingerprints count an attachment by its content, wherever it was written. SPEC 3.6.
+- The option "Expand embedded Excel" is now "Read attachments" and stays on by default; off (`--no-inline`, `-E`), attachments are only listed. An unfinished merged run started by an earlier version starts again from the first batch, as for any other option change.
+
 ## 2.6.0
 
 - The browser page is redesigned; the endpoints, the token, the heartbeat and the upgrade flow are unchanged. A title bar with a 中 / EN switch (the service's language stays the default), light and dark themes, Help, a "⋯" menu holding Upgrade and Roll back, and Quit. A task bar under the title shows what runs, the current document, N of M and Cancel.

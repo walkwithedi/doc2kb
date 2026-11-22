@@ -94,6 +94,8 @@ MESSAGES = {
     'no_files': ('no file ticked', '没有勾选任何文件'),
     'bad_batch_size': ('files per batch must be a whole number from 0 to 1000000',
                        '每批文档数须为 0 到 1000000 的整数'),
+    'bad_att_max': ('the attachment length must be a whole number from 0 to 10000000',
+                    '附件字数须为 0 到 10000000 的整数'),
     'no_job': ('nothing is running', '没有正在运行的任务'),
     'core_missing': ('doc2kb_core.py not found next to doc2kb_web.py',
                      '找不到同目录的 doc2kb_core.py'),
@@ -532,13 +534,19 @@ def common_options(data, out, merge):
     """The options both run kinds share: (params, core arguments)."""
     images = bool(data.get('images'))
     sheets = bool(data.get('sheets')) and images and has_tool('montage')
+    att_max = data.get('attach_max_chars', core.ATT_MAX_CHARS)
+    if isinstance(att_max, bool) or not isinstance(att_max, int) or not 0 <= att_max <= 10000000:
+        raise ValueError(M('bad_att_max'))
     params = {'out': out, 'merge': merge, 'inline': bool(data.get('inline')), 'images': images,
-              'keep_dups': bool(data.get('keep_dups')), 'sheets': sheets}
+              'keep_dups': bool(data.get('keep_dups')), 'sheets': sheets,
+              'attach_max_chars': att_max}
     argv = ['-o', out, '--lang', LANG]
     if merge:
         argv.append('--merge')
     if not params['inline']:
         argv.append('--no-inline')
+    else:
+        argv += ['--attach-max-chars', str(att_max)]
     if not images:
         argv.append('--no-images')
     if params['keep_dups']:
